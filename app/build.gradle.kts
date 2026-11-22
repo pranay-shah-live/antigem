@@ -10,6 +10,9 @@ val parsedVersion = if (versionFile.exists()) {
 
 val appVersionCode = (parsedVersion["version_code"] as? Number)?.toInt() ?: 1
 val appVersionName = (parsedVersion["version_name"] as? String) ?: "1.0.0"
+val persistentDebugKeystore = providers.gradleProperty("debugKeystore").orNull?.let { file(it) }
+val persistentDebugStorePassword = providers.gradleProperty("debugStorePassword").orNull
+val persistentDebugKeyAlias = providers.gradleProperty("debugKeyAlias").orNull
 
 // The IDE bridge (Go) reports the same version as the app: its build embeds a copy of version.json, refreshed here on
 // every Gradle build so the two can never differ and nobody has to remember it.
@@ -81,12 +84,27 @@ android {
             keyAlias = "antigem"
             keyPassword = "123456"
         }
+        if (persistentDebugKeystore != null) {
+            require(!persistentDebugStorePassword.isNullOrBlank()) { "debugStorePassword is required with debugKeystore" }
+            require(!persistentDebugKeyAlias.isNullOrBlank()) { "debugKeyAlias is required with debugKeystore" }
+            create("persistentDebug") {
+                storeFile = persistentDebugKeystore
+                storeType = "PKCS12"
+                storePassword = persistentDebugStorePassword
+                keyAlias = persistentDebugKeyAlias
+                keyPassword = persistentDebugStorePassword
+            }
+        }
     }
 
     // Local ports differ per app so they can all run side by side: the old com.termux build uses 1234/1235/8765,
     // release (ai.antigem) 1236/1237/8767, debug (ai.antidev, see androidComponents below) 1238/1239/8768
     buildTypes {
         debug {
+            // GitHub Actions supplies the same private key for every build, so installs update in place.
+            if (persistentDebugKeystore != null) {
+                signingConfig = signingConfigs.getByName("persistentDebug")
+            }
             buildConfigField("int", "BRIDGE_PORT", "1238")
             buildConfigField("int", "HUB_PORT", "1239")
             buildConfigField("int", "BROWSER_MCP_PORT", "8768")

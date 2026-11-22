@@ -68,6 +68,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.first
 import ai.antigem.data.daemon.FileNode
 import ai.antigem.data.daemon.IdeApiClient
 import ai.antigem.data.daemon.ProjectItem
@@ -442,8 +443,52 @@ fun ChatScreen(
     }
     // A launcher shortcut or the Quick Settings tile asked for a live voice call: start it here, where the call lives
     val voiceCallRequested by ai.antigem.data.voice.VoiceCallShortcut.pending.collectAsState()
+    var assistantCallQueued by remember { mutableStateOf(false) }
     LaunchedEffect(voiceCallRequested) {
-        if (voiceCallRequested && ai.antigem.data.voice.VoiceCallShortcut.consume()) callWithMicPermission()
+        val request = ai.antigem.data.voice.VoiceCallShortcut.consume(isInFloatingWindow) ?: return@LaunchedEffect
+        if (request.assistant && !voiceCall.active) {
+            val savedId = ai.antigem.data.voice.VoiceCallShortcut.assistantConversationId(context)
+            val existingId = savedId?.let { id ->
+                kotlinx.coroutines.withTimeoutOrNull(8_000) {
+                    viewModel.allConversations.first { all -> all.any { it.id == id && it.agent == ai.antigem.domain.model.AgentKind.AGY } }
+                }?.let { id }
+            }
+            if (existingId != null) {
+                viewModel.selectConversation(existingId)
+                val loaded = kotlinx.coroutines.withTimeoutOrNull(15_000) {
+                    kotlinx.coroutines.flow.combine(viewModel.currentConversation, viewModel.isLoadingConversation) { conversation, loading ->
+                        conversation?.id == existingId && !loading
+                    }.first { it }
+                } ?: false
+                if (!loaded) {
+                    ai.antigem.ui.components.AppToastHelper.showToast(
+                        "Couldn't load the Gemini Assistant chat.", ai.antigem.ui.components.ChatToastType.ERROR
+                    )
+                    return@LaunchedEffect
+                }
+            } else if (savedId == null) {
+                viewModel.startNewChat(ai.antigem.domain.model.AgentKind.AGY)
+                viewModel.currentConversation.value?.id?.let {
+                    ai.antigem.data.voice.VoiceCallShortcut.saveAssistantConversationId(context, it)
+                }
+            } else {
+                viewModel.selectConversation(savedId)
+                val loaded = kotlinx.coroutines.withTimeoutOrNull(15_000) {
+                    kotlinx.coroutines.flow.combine(viewModel.currentConversation, viewModel.isLoadingConversation) { conversation, loading ->
+                        conversation?.id == savedId && !loading
+                    }.first { it }
+                } ?: false
+                if (!loaded) {
+                    ai.antigem.ui.components.AppToastHelper.showToast(
+                        "Couldn't reconnect to the Gemini Assistant chat.", ai.antigem.ui.components.ChatToastType.ERROR
+                    )
+                    return@LaunchedEffect
+                }
+            }
+            assistantCallQueued = true
+        } else {
+            assistantCallQueued = true
+        }
     }
     // before the first call: pick a voice (swipe through them and hear each one)
     var showVoicePicker by remember { mutableStateOf(false) }
@@ -460,6 +505,12 @@ fun ChatScreen(
             )
             !ai.antigem.data.voice.AgyVoicePreferences.picked.value -> showVoicePicker = true
             else -> callWithMicPermission()
+        }
+    }
+    LaunchedEffect(assistantCallQueued, currentConv?.id) {
+        if (assistantCallQueued && currentConv != null) {
+            assistantCallQueued = false
+            onStartVoiceCall()
         }
     }
     if (showVoicePicker) {
@@ -3051,7 +3102,9 @@ fun ChatScreen(
         onOpenAgySettings = {
             requestedSettingsSection = ai.antigem.ui.settings.SettingsSection.AGY_CLI
             showSettingsDialog = true
-        }
+        },
+        compact = isInFloatingWindow,
+        onExpand = onOpenFullScreen
     )
 
     // Model Selector Bottom Sheet (Active Model at Top & Expandable Categories)
@@ -4132,4 +4185,3 @@ internal fun resolveChatFileLink(path: String, workspaceUri: String?): String {
     }
     return "/" + parts.joinToString("/")
 }
-

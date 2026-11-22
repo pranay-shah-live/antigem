@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity() {
             // A launcher shortcut or the Quick Settings tile asked for a live voice call: show the chat, which starts it
             val voiceCallPending by ai.antigem.data.voice.VoiceCallShortcut.pending.collectAsState()
             LaunchedEffect(voiceCallPending) {
-                if (voiceCallPending && currentViewMode != AppViewMode.CHAT) {
+                if (voiceCallPending?.floatingOnly == false && currentViewMode != AppViewMode.CHAT) {
                     previousViewMode = currentViewMode
                     currentViewMode = AppViewMode.CHAT
                 }
@@ -749,7 +749,9 @@ class MainActivity : ComponentActivity() {
     private fun handleVoiceCallIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_START_VOICE_CALL, false) != true) return
         intent.removeExtra(EXTRA_START_VOICE_CALL)
-        ai.antigem.data.voice.VoiceCallShortcut.request()
+        ai.antigem.data.voice.VoiceCallShortcut.request(
+            ai.antigem.data.voice.VoiceCallShortcut.Request(floatingOnly = false)
+        )
     }
 
     /**

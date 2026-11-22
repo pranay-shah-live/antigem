@@ -1,6 +1,6 @@
 name: Debug APK
 
-# A debug build of this branch, with no keystore: installs next to the official app as ai.antidev.
+# Debug build of this branch; the persistent keystore lets future ai.antidev builds update in place.
 on:
   workflow_dispatch:
   push:
@@ -35,8 +35,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Prepare persistent debug signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANTIGEM_DEBUG_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANTIGEM_DEBUG_KEYSTORE_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || { echo "Missing ANTIGEM_DEBUG_KEYSTORE_BASE64 secret"; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo "Missing ANTIGEM_DEBUG_KEYSTORE_PASSWORD secret"; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/antigem-debug.p12"
+
       - name: Build debug APK (arm64)
-        run: ./gradlew assembleDebug
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANTIGEM_DEBUG_KEYSTORE_PASSWORD }}
+        run: |
+          ./gradlew assembleDebug \
+            -PdebugKeystore="$RUNNER_TEMP/antigem-debug.p12" \
+            -PdebugStorePassword="$KEYSTORE_PASSWORD" \
+            -PdebugKeyAlias=antigem-debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

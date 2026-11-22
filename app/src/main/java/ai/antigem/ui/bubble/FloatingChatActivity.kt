@@ -35,6 +35,7 @@ import ai.antigem.ui.chat.ChatViewModel
 import ai.antigem.ui.chat.ChatViewModelHolder
 import ai.antigem.ui.components.LocalTerminalContent
 import ai.antigem.ui.ide.IdeScreen
+import ai.antigem.data.voice.VoiceCallShortcut
 
 class FloatingChatActivity : ComponentActivity() {
 
@@ -43,6 +44,7 @@ class FloatingChatActivity : ComponentActivity() {
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleVoiceCallIntent(intent)
         enableEdgeToEdge()
         overridePendingTransition(0, 0)
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
@@ -77,6 +79,18 @@ class FloatingChatActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleVoiceCallIntent(intent)
+    }
+
+    private fun handleVoiceCallIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(MainActivity.EXTRA_START_VOICE_CALL, false) != true) return
+        intent.removeExtra(MainActivity.EXTRA_START_VOICE_CALL)
+        VoiceCallShortcut.request()
     }
 
     @Suppress("DEPRECATION")

@@ -310,6 +310,18 @@
             </intent-filter>
         </service>
 
+        <!-- Dedicated Gemini / Antigravity live voice assistant tile; independent of Jarvis. -->
+        <service
+            android:name="ai.antigem.data.voice.AgyVoiceTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_jarvis_mic"
+            android:label="Gemini Voice"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- Holds the ADB pairing notification (code entry) while the user is in Developer options -->
         <service
             android:name="ai.antigem.data.adb.AdbPairingService"

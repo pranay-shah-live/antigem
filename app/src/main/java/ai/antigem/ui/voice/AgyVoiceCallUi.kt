@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.rounded.ClosedCaptionDisabled
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Tune
@@ -144,19 +146,41 @@ private fun statusLine(st: AgyVoiceCall.State, agentWorking: Boolean): String = 
  * [agentWorking]: the call's chat is running a turn right now.
  */
 @Composable
-fun AgyVoiceCallScreen(agentWorking: Boolean, onOpenAgySettings: () -> Unit) {
+fun AgyVoiceCallScreen(
+    agentWorking: Boolean,
+    onOpenAgySettings: () -> Unit,
+    compact: Boolean = false,
+    onExpand: () -> Unit = {}
+) {
     val st by AgyVoiceCall.state.collectAsState()
     if (!st.active || st.minimized) return
     Dialog(
         onDismissRequest = { if (st.phase == Phase.FAILED) AgyVoiceCall.end() else AgyVoiceCall.setMinimized(true) },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false)
     ) {
-        CallContent(st, agentWorking, onOpenAgySettings)
+        if (compact) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.86f),
+                shape = RoundedCornerShape(30.dp),
+                color = Ink,
+                shadowElevation = 24.dp
+            ) {
+                CallContent(st, agentWorking, onOpenAgySettings, compact = true, onExpand = onExpand)
+            }
+        } else {
+            CallContent(st, agentWorking, onOpenAgySettings)
+        }
     }
 }
 
 @Composable
-private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgySettings: () -> Unit) {
+private fun CallContent(
+    st: AgyVoiceCall.State,
+    agentWorking: Boolean,
+    onOpenAgySettings: () -> Unit,
+    compact: Boolean = false,
+    onExpand: () -> Unit = {}
+) {
     val context = LocalContext.current
     val voice = AgyVoicePreferences.voiceOf(st.voice)
     val captionsOn by AgyVoicePreferences.captions.collectAsState()
@@ -191,7 +215,7 @@ private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgy
                 radius = size.width * 0.9f, center = Offset(size.width / 2, size.height * 0.38f)
             )
         }
-        Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 18.dp, vertical = 10.dp)) {
+        Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = if (compact) 12.dp else 18.dp, vertical = if (compact) 6.dp else 10.dp)) {
             // ---- top bar
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { if (st.phase == Phase.FAILED) AgyVoiceCall.end() else AgyVoiceCall.setMinimized(true) }) {
@@ -216,6 +240,11 @@ private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgy
                 }
                 IconButton(onClick = { showLog = true }) {
                     Icon(Icons.Rounded.Info, "Call log", tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(20.dp))
+                }
+                if (compact) {
+                    IconButton(onClick = onExpand) {
+                        Icon(Icons.Rounded.KeyboardArrowUp, "Open full chat", tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(24.dp))
+                    }
                 }
             }
 
@@ -248,7 +277,7 @@ private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgy
                     onClose = { AgyVoiceCall.end() }
                 )
             } else if (captionsOn) {
-                Captions(st, voice, Modifier.fillMaxWidth().height(170.dp))
+                Captions(st, voice, Modifier.fillMaxWidth().height(if (compact) 120.dp else 170.dp))
             } else {
                 Spacer(Modifier.height(24.dp))
             }
