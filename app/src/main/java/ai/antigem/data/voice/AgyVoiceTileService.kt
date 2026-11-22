@@ -7,7 +7,6 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import ai.antigem.MainActivity
-import ai.antigem.ui.bubble.FloatingChatActivity
 
 /** Dedicated Quick Settings entry point for the Antigravity/Gemini voice assistant, separate from Jarvis. */
 class AgyVoiceTileService : TileService() {
@@ -26,7 +25,7 @@ class AgyVoiceTileService : TileService() {
     @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         super.onClick()
-        val intent = Intent(this, FloatingChatActivity::class.java)
+        val intent = Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(MainActivity.EXTRA_START_VOICE_CALL, true)
         if (Build.VERSION.SDK_INT >= 34) {

@@ -65,7 +65,7 @@ object VoiceCallShortcut {
     fun publish(context: Context) {
         runCatching {
             val others = ShortcutManagerCompat.getDynamicShortcuts(context).filter { it.id != SHORTCUT_ID }
-            val intent = Intent(context, ai.antigem.ui.bubble.FloatingChatActivity::class.java)
+            val intent = Intent(context, ai.antigem.MainActivity::class.java)
                 .setAction(Intent.ACTION_VIEW)
                 .putExtra(ai.antigem.MainActivity.EXTRA_START_VOICE_CALL, true)
             val shortcut = ShortcutInfoCompat.Builder(context, SHORTCUT_ID)

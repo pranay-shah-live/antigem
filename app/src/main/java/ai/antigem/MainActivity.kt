@@ -749,9 +749,11 @@ class MainActivity : ComponentActivity() {
     private fun handleVoiceCallIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_START_VOICE_CALL, false) != true) return
         intent.removeExtra(EXTRA_START_VOICE_CALL)
-        ai.antigem.data.voice.VoiceCallShortcut.request(
-            ai.antigem.data.voice.VoiceCallShortcut.Request(floatingOnly = false)
-        )
+        val floatingIntent = Intent(this, ai.antigem.ui.bubble.FloatingChatActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(EXTRA_START_VOICE_CALL, true)
+        // Let MainActivity finish initializing the app's managers before the floating ChatScreen starts the call.
+        window.decorView.post { startActivity(floatingIntent) }
     }
 
     /**
