@@ -87,12 +87,26 @@ class MainActivity : ComponentActivity() {
         resetTerminalLauncherOnce()
         ai.antigem.data.remote.AndroidLocalBridgeServer.instance.start(this)
         ai.antigem.data.jarvis.JarvisController.attach(application, chatViewModel)
+        // Jarvis over other apps (Settings → Jarvis → Screen & look → Float over other apps)
+        ai.antigem.ui.jarvis.JarvisFloating.attach(this)
         ai.antigem.data.agent.ChatCompletionMonitor.start(application, chatViewModel)
         ai.antigem.data.memory.MemorySync.start(chatViewModel)
         handleIncomingFileIntent(intent)
         handleJarvisIntent(intent)
         handleVoiceCallIntent(intent)
         ai.antigem.data.voice.VoiceCallShortcut.publish(this)
+        // Voice call tile / shortcut: the floating call window stays away while this screen is up; the long-press menu
+        // of the app icon gets "Voice call"
+        lifecycle.addObserver(androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> ai.antigem.data.voice.VoiceCallLauncher.setAppVisible(true)
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> ai.antigem.data.voice.VoiceCallLauncher.setAppVisible(false)
+                else -> Unit
+            }
+        })
+        ai.antigem.data.voice.AgyVoicePreferences.init(this)
+        ai.antigem.data.voice.VoiceCallLauncher.publishShortcut(this)
+        ai.antigem.ui.voice.AgyVoiceBubble.attach(this)
 
         setContent {
             val initialThemeMode = remember { chatViewModel.authPreferences.getThemeModeSync() }
@@ -745,10 +759,13 @@ class MainActivity : ComponentActivity() {
         }, 700)
     }
 
-    /** The launcher shortcut or the Quick Settings tile asked for a live voice call: the chat screen starts it. */
+    /** The launcher shortcut or the Quick Settings tile asked for a live voice call: start the floating voice window. */
     private fun handleVoiceCallIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra(EXTRA_START_VOICE_CALL, false) != true) return
+        val startVoiceCall = intent?.getBooleanExtra(EXTRA_START_VOICE_CALL, false) == true
+        val startUpstreamCall = intent?.getBooleanExtra(ai.antigem.data.voice.VoiceCallLauncher.EXTRA_START_CALL, false) == true
+        if (!startVoiceCall && !startUpstreamCall) return
         intent.removeExtra(EXTRA_START_VOICE_CALL)
+        intent.removeExtra(ai.antigem.data.voice.VoiceCallLauncher.EXTRA_START_CALL)
         val floatingIntent = Intent(this, ai.antigem.ui.bubble.FloatingChatActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(EXTRA_START_VOICE_CALL, true)
