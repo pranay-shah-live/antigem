@@ -64,7 +64,7 @@ jobs:
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -print | sort -V | tail -1)
           test -n "$APK" && test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apk-signature.txt"
-          APK_CERT_SHA256=$(awk '/Signer #1 certificate SHA-256 digest:/ {gsub(":", "", $NF); print toupper($NF); exit}' "$RUNNER_TEMP/apk-signature.txt")
+          APK_CERT_SHA256=$(awk '/certificate SHA-256 digest:/ {gsub(":", "", $NF); print toupper($NF); exit}' "$RUNNER_TEMP/apk-signature.txt")
           test "$APK_CERT_SHA256" = "$EXPECTED_CERT_SHA256" || { echo "APK was not signed with the persistent debug key"; exit 1; }
 
       - name: Upload APK
