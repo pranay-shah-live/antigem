@@ -166,6 +166,8 @@ object JarvisPreferences {
     val busyBehavior = pref("busy_behavior", "smart")
     /** The headset / Bluetooth button talks (one press) and stops (two presses) while hands-free is on. */
     val headsetButton = pref("headset_button", true)
+    /** What the Quick Settings tile does: "jarvis" (talk to Jarvis) or "voice" (start a Gemini Live voice call). */
+    val qsTileMode = pref("qs_tile_mode", "jarvis")
     /** Live context (screen, project, chats, tasks) goes with every message so Jarvis rarely has to look it up. */
     val contextInPrompt = pref("context_in_prompt", true)
 

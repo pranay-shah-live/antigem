@@ -359,7 +359,15 @@ fun JarvisSettingsSectionPage(page: JarvisSettingsPage, cardBg: Color, cardBorde
                     ) { JarvisController.setHandsFree(it) }
                     val headset by P.headsetButton.state.collectAsState()
                     JSwitch("Headset button", "With hands-free on: one press talks (or sends), two presses stop. Works while no music app holds the button.", headset) { P.headsetButton.set(it) }
-                    JHint("Quick Settings tile: pull down the notification shade, edit the tiles and add “Jarvis” to talk from anywhere with one tap.")
+                    val tileMode by P.qsTileMode.state.collectAsState()
+                    Text("Quick Settings tile", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    JChips(listOf("jarvis" to "Talk to Jarvis", "voice" to "Live voice call"), tileMode) { P.qsTileMode.set(it) }
+                    JHint(
+                        if (tileMode == "voice")
+                            "Pull down the notification shade, edit the tiles and add “Jarvis”: one tap starts a Gemini Live voice call in the chat on screen (a new chat when there is none)."
+                        else
+                            "Pull down the notification shade, edit the tiles and add “Jarvis” to talk from anywhere with one tap."
+                    )
                 }
             }
             JarvisSettingsPage.LISTEN -> {

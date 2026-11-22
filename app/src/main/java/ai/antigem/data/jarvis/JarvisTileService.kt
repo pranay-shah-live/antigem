@@ -17,10 +17,16 @@ class JarvisTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         JarvisPreferences.init(this)
+        val voiceMode = JarvisPreferences.qsTileMode.value == "voice"
         qsTile?.apply {
-            state = if (JarvisPreferences.enabled.value) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-            label = "Jarvis"
-            if (Build.VERSION.SDK_INT >= 29) subtitle = if (JarvisPreferences.handsFree.value) "Hands-free" else if (JarvisPreferences.enabled.value) "Tap to talk" else "Off"
+            state = if (voiceMode || JarvisPreferences.enabled.value) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            label = if (voiceMode) "Live voice" else "Jarvis"
+            if (Build.VERSION.SDK_INT >= 29) subtitle = when {
+                voiceMode -> "Start a voice call"
+                JarvisPreferences.handsFree.value -> "Hands-free"
+                JarvisPreferences.enabled.value -> "Tap to talk"
+                else -> "Off"
+            }
             updateTile()
         }
     }
@@ -29,6 +35,19 @@ class JarvisTileService : TileService() {
     override fun onClick() {
         super.onClick()
         JarvisPreferences.init(this)
+        // Settings → Jarvis → Trigger: the tile can start a Gemini Live voice call instead of talking to Jarvis
+        if (JarvisPreferences.qsTileMode.value == "voice") {
+            val call = Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(MainActivity.EXTRA_START_VOICE_CALL, true)
+            if (Build.VERSION.SDK_INT >= 34) {
+                startActivityAndCollapse(PendingIntent.getActivity(this, 78, call, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            } else {
+                @Suppress("DEPRECATION")
+                startActivityAndCollapse(call)
+            }
+            return
+        }
         if (JarvisController.isAttached && JarvisPreferences.enabled.value && JarvisPreferences.handsFree.value) {
             runCatching { startService(Intent(this, JarvisService::class.java).setAction(JarvisService.ACTION_TALK)) }
             return

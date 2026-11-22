@@ -45,6 +45,9 @@ class MainActivity : ComponentActivity() {
         val currentInstance: MainActivity?
             get() = instanceRef?.get()?.takeIf { !it.isFinishing && !it.isDestroyed }
 
+        /** The launcher shortcut or the Quick Settings tile asked for a live voice call. */
+        const val EXTRA_START_VOICE_CALL = "ai.antigem.intent.extra.START_VOICE_CALL"
+
         fun showToast(message: String) {
             ai.antigem.ui.components.AppToastHelper.showToast(message)
         }
@@ -88,6 +91,8 @@ class MainActivity : ComponentActivity() {
         ai.antigem.data.memory.MemorySync.start(chatViewModel)
         handleIncomingFileIntent(intent)
         handleJarvisIntent(intent)
+        handleVoiceCallIntent(intent)
+        ai.antigem.data.voice.VoiceCallShortcut.publish(this)
 
         setContent {
             val initialThemeMode = remember { chatViewModel.authPreferences.getThemeModeSync() }
@@ -115,6 +120,15 @@ class MainActivity : ComponentActivity() {
             }
             var currentViewMode by remember { mutableStateOf(initialViewMode) }
             var previousViewMode by remember { mutableStateOf(AppViewMode.CHAT) }
+
+            // A launcher shortcut or the Quick Settings tile asked for a live voice call: show the chat, which starts it
+            val voiceCallPending by ai.antigem.data.voice.VoiceCallShortcut.pending.collectAsState()
+            LaunchedEffect(voiceCallPending) {
+                if (voiceCallPending && currentViewMode != AppViewMode.CHAT) {
+                    previousViewMode = currentViewMode
+                    currentViewMode = AppViewMode.CHAT
+                }
+            }
 
             LaunchedEffect(requestedMode) {
                 requestedMode?.let { mode ->
@@ -702,6 +716,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         handleIncomingFileIntent(intent)
         handleJarvisIntent(intent)
+        handleVoiceCallIntent(intent)
     }
 
     /**
@@ -728,6 +743,13 @@ class MainActivity : ComponentActivity() {
         window.decorView.postDelayed({
             if (ai.antigem.data.jarvis.JarvisController.isAttached) ai.antigem.data.jarvis.JarvisController.startListening()
         }, 700)
+    }
+
+    /** The launcher shortcut or the Quick Settings tile asked for a live voice call: the chat screen starts it. */
+    private fun handleVoiceCallIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_START_VOICE_CALL, false) != true) return
+        intent.removeExtra(EXTRA_START_VOICE_CALL)
+        ai.antigem.data.voice.VoiceCallShortcut.request()
     }
 
     /**

@@ -440,6 +440,11 @@ fun ChatScreen(
         ) beginVoiceCall()
         else voiceCallPermission.launch(android.Manifest.permission.RECORD_AUDIO)
     }
+    // A launcher shortcut or the Quick Settings tile asked for a live voice call: start it here, where the call lives
+    val voiceCallRequested by ai.antigem.data.voice.VoiceCallShortcut.pending.collectAsState()
+    LaunchedEffect(voiceCallRequested) {
+        if (voiceCallRequested && ai.antigem.data.voice.VoiceCallShortcut.consume()) callWithMicPermission()
+    }
     // before the first call: pick a voice (swipe through them and hear each one)
     var showVoicePicker by remember { mutableStateOf(false) }
     val onStartVoiceCall: () -> Unit = {
