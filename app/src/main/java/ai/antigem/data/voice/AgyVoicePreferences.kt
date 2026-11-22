@@ -38,6 +38,7 @@ object AgyVoicePreferences {
 
     /** Languages offered for calls (BCP 47 tag → name in that language, English name). */
     val languages = listOf(
+        Triple("en-IN", "English (India)", "English (India)"),
         Triple("en-US", "English", "English"),
         Triple("hi-IN", "हिन्दी", "Hindi"),
         Triple("ne-NP", "नेपाली", "Nepali"),
@@ -124,6 +125,31 @@ object AgyVoicePreferences {
         sp?.edit()?.putBoolean("bubble", on)?.apply()
     }
 
+    const val PROGRESS_MILESTONE = "milestone"
+    const val PROGRESS_VERBOSE = "verbose"
+    const val PROGRESS_SILENT = "silent"
+
+    private val _progressMode = MutableStateFlow(PROGRESS_MILESTONE)
+    val progressMode: StateFlow<String> = _progressMode.asStateFlow()
+
+    fun setProgressMode(mode: String) {
+        val clean = when (mode) {
+            PROGRESS_VERBOSE, PROGRESS_SILENT -> mode
+            else -> PROGRESS_MILESTONE
+        }
+        _progressMode.value = clean
+        sp?.edit()?.putString("progress_mode", clean)?.apply()
+    }
+
+    private val _micGain = MutableStateFlow(1.8f)
+    val micGain: StateFlow<Float> = _micGain.asStateFlow()
+
+    fun setMicGain(gain: Float) {
+        val clamped = gain.coerceIn(1.0f, 4.0f)
+        _micGain.value = clamped
+        sp?.edit()?.putFloat("mic_gain", clamped)?.apply()
+    }
+
     private const val CALL_CHATS_MAX = 20
 
     /**
@@ -163,6 +189,8 @@ object AgyVoicePreferences {
         _captions.value = p.getBoolean("captions", true)
         _picked.value = p.getBoolean("picked", false)
         _bubble.value = p.getBoolean("bubble", false)
+        _progressMode.value = p.getString("progress_mode", PROGRESS_MILESTONE) ?: PROGRESS_MILESTONE
+        _micGain.value = p.getFloat("mic_gain", 1.8f).coerceIn(1.0f, 4.0f)
         _language.value = p.getString("language", LANGUAGE_AUTO)?.takeIf { t -> t == LANGUAGE_AUTO || languages.any { it.first == t } } ?: LANGUAGE_AUTO
     }
 

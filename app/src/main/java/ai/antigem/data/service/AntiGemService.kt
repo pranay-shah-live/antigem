@@ -30,12 +30,17 @@ import androidx.savedstate.SavedStateRegistryOwner
 import ai.antigem.MainActivity
 import ai.antigem.R
 import ai.antigem.data.local.LocalTerminalManager
+import ai.antigem.data.remote.AndroidLocalBridgeServer
+import ai.antigem.ui.chat.ChatViewModelHolder
 import ai.antigem.ui.bubble.FloatingChatActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 
 open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
@@ -52,6 +57,9 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
     private var currentSessionCount: Int = 0
     /** Run panel / IDE commands still running (they keep this service, and so the app, alive). */
     private var currentRunCount: Int = 0
+    private var bridgeServerRunning = false
+    private var currentChatTitle: String? = null
+    private var currentChatReplying = false
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -103,7 +111,8 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
 
         runStartForeground()
         observeTerminalSessions()
-        ai.antigem.data.remote.AndroidLocalBridgeServer.instance.start(this)
+        observeChatAndServerState()
+        AndroidLocalBridgeServer.instance.start(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -165,6 +174,30 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
         }
     }
 
+    private fun observeChatAndServerState() {
+        val chatState = ChatViewModelHolder.instanceFlow.flatMapLatest { viewModel ->
+            if (viewModel == null) {
+                flowOf(null to false)
+            } else {
+                combine(viewModel.currentConversation, viewModel.isCurrentChatActivelyRunning) { conversation, replying ->
+                    conversation?.let {
+                        it.title.takeIf { title -> title.isNotBlank() && title != "New Chat" } ?: "Chat open"
+                    } to replying
+                }
+            }
+        }
+        serviceScope.launch {
+            combine(AndroidLocalBridgeServer.instance.running, chatState) { serverRunning, chat ->
+                serverRunning to chat
+            }.collect { (serverRunning, chat) ->
+                bridgeServerRunning = serverRunning
+                currentChatTitle = chat.first
+                currentChatReplying = chat.second
+                updateNotification()
+            }
+        }
+    }
+
     private fun runStartForeground() {
         setupNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -192,9 +225,14 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
     private fun buildNotification(): Notification {
         val wakeLockHeld = wakeLock != null
 
-        val sessionText = "$currentSessionCount " + (if (currentSessionCount == 1) "session" else "sessions") +
+        val serverText = if (bridgeServerRunning) "Bridge running" else "Bridge starting"
+        val chatText = currentChatTitle?.let {
+            " · $it${if (currentChatReplying) " (replying)" else ""}"
+        }.orEmpty()
+        val sessionText = "$currentSessionCount " + (if (currentSessionCount == 1) "terminal session" else "terminal sessions") +
             (if (currentRunCount > 0) " · $currentRunCount running" else "")
-        val notificationText = if (wakeLockHeld) "$sessionText (wake lock held)" else sessionText
+        val notificationText = "$serverText$chatText · $sessionText" +
+            (if (wakeLockHeld) " (wake lock held)" else "")
 
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -238,6 +276,7 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("AntiGem")
             .setContentText(notificationText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(notificationText))
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

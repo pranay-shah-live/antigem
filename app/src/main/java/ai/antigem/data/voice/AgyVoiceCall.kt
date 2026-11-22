@@ -345,6 +345,18 @@ object AgyVoiceCall {
         s.send(VoiceClientMessage(settings_update = VoiceClientMessage.SettingsUpdate(plan_model = m)))
     }
 
+    /** Injects a written text prompt or correction into the live voice call; the voice agent replies in audio as usual. */
+    fun sendTextCorrection(text: String, isFinal: Boolean = true): Boolean {
+        val clean = text.trim()
+        if (clean.isBlank()) return false
+        val s = session ?: return false
+        return s.send(
+            VoiceClientMessage(
+                user_transcript = VoiceClientMessage.UserTranscript(text = clean, is_final = isFinal)
+            )
+        )
+    }
+
     // ------------------------------------------------------------------------------------------------ hub
 
     private sealed class Health {
@@ -789,9 +801,11 @@ object AgyVoiceCall {
                     if (n < MIC_CHUNK_SAMPLES) break
                     // a voice sample playing (voice picker) must not reach the voice agent
                     val muted = _state.value.muted || AgyVoicePreview.playing.value != null
+                    val gain = AgyVoicePreferences.micGain.value
                     var sum = 0.0
                     for (i in 0 until MIC_CHUNK_SAMPLES) {
-                        val v = if (muted) 0 else buf[i].toInt()
+                        val sample = (buf[i].toInt() * gain).toInt().coerceIn(-32768, 32767)
+                        val v = if (muted) 0 else sample
                         sum += (v * v).toDouble()
                         bytes[2 * i] = (v and 0xff).toByte()
                         bytes[2 * i + 1] = ((v shr 8) and 0xff).toByte()

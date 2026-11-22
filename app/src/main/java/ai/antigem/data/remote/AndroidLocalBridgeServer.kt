@@ -6,6 +6,9 @@ import android.view.KeyEvent
 import ai.antigem.data.local.LocalTerminalBridge
 import ai.antigem.ui.browser.BrowserSessionManager
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -57,7 +60,10 @@ class AndroidLocalBridgeServer private constructor() {
     }
 
     private var serverSocket: ServerSocket? = null
+    @Volatile
     private var isRunning = false
+    private val _running = MutableStateFlow(false)
+    val running: StateFlow<Boolean> = _running.asStateFlow()
     private val serverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     // one thread per open request: Flow calls wait up to ~50 s each, so a fixed pool would make parallel calls queue
     private val clientThreadPool = Executors.newCachedThreadPool()
@@ -96,6 +102,7 @@ class AndroidLocalBridgeServer private constructor() {
                 }
                 serverSocket = socket ?: ServerSocket(0, 50, bindAddr).also { boundPort = it.localPort }
                 isRunning = true
+                _running.value = true
                 Log.i(TAG, "Bridge MCP / REST Server running on http://127.0.0.1:$boundPort")
                 // a server (Remote mode) reaches this MCP server through an SSH reverse tunnel: point it at the bound port
                 ai.antigem.data.remote.RemoteServerManager.resyncTunnels()
@@ -107,7 +114,10 @@ class AndroidLocalBridgeServer private constructor() {
                     }
                 }
             } catch (e: Exception) {
-                if (isRunning) {
+                val wasRunning = isRunning
+                isRunning = false
+                _running.value = false
+                if (wasRunning) {
                     Log.e(TAG, "Server accept error", e)
                 }
             }
@@ -116,6 +126,7 @@ class AndroidLocalBridgeServer private constructor() {
 
     fun stop() {
         isRunning = false
+        _running.value = false
         try {
             serverSocket?.close()
         } catch (_: Exception) {}

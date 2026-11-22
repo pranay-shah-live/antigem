@@ -24,14 +24,16 @@ import java.util.TimeZone
 /**
  * jarvis_mcp: lets the model drive the AntiGem app directly (no tapping or scrolling): its voice, tasks it manages in their
  * own chats, chats of both agents, models and chat settings, approvals, screens and settings pages, the IDE's projects and
- * files, app help and configuration, usage, and Jarvis' own memory. Served by AndroidLocalBridgeServer at /jarvis. All
- * state is read and changed through the app's own objects.
+ * files, notes, browser and terminal actions, app help and configuration, usage, and Jarvis' own memory. Served by
+ * AndroidLocalBridgeServer at /jarvis. All state is read and changed through the app's own objects.
  */
 object JarvisMcp {
 
     const val INSTRUCTIONS = "Jarvis controls the AntiGem app and leads teams of sub-agents. The first message of a Jarvis chat " +
         "has the full guide and tool list; jarvis_help repeats it. Call these tools directly by name (no searching, no config reading). " +
         "In the voice chat everything the user should hear goes through jarvis_speak; in a Jarvis text chat you write normal replies. " +
+        "For app Notes use jarvis_notes_*; for in-app browser actions use jarvis_browser_*; for terminal sessions and commands use jarvis_terminal_*. " +
+        "Prefer these native tools over navigating screens. Ask before destructive note or terminal actions. " +
         "Big jobs go to jarvis_task_start (its own watched chat, optionally a team); pass your manager_id. Never wait or poll for tasks: " +
         "end your turn, the app reports back with a <jarvis_events> message. Keep multi-step work in jarvis_mission_set / jarvis_mission_update. " +
         "App help: jarvis_app_guide, jarvis_get_config, jarvis_open_settings. Ask before deleting anything."
@@ -189,6 +191,55 @@ object JarvisMcp {
         put(tool("jarvis_open_url", "Open a web page in the in-app browser and show it. Use the browser tools afterwards to read or click on it.",
             listOf("url"), "url" to prop("string", "Address, e.g. https://example.com"),
             "new_tab" to prop("boolean", "Open in a new tab (default true)")))
+        // Expose the existing in-app browser MCP tools through Jarvis' own endpoint so Jarvis can use them natively.
+        val browserTools = ai.antigem.ui.browser.mcp.BrowserMcp.tools()
+        for (i in 0 until browserTools.length()) {
+            val browserTool = browserTools.getJSONObject(i)
+            val name = browserTool.optString("name")
+            if (name.isNotBlank()) {
+                put(JSONObject(browserTool.toString()).put("name", "jarvis_$name"))
+            }
+        }
+        // ---- Notes screen, via the existing Notes repository / MCP implementation
+        val noteTools = ai.antigem.data.notes.NotesMcp.tools()
+        for (i in 0 until noteTools.length()) {
+            val noteTool = noteTools.getJSONObject(i)
+            val name = noteTool.optString("name")
+            if (name.isNotBlank()) {
+                val exposed = JSONObject(noteTool.toString()).put("name", "jarvis_$name")
+                if (name == "notes_delete") {
+                    val schema = exposed.getJSONObject("inputSchema")
+                    schema.getJSONObject("properties").put("confirm", prop("boolean", "Must be true after asking the user to confirm deletion."))
+                    schema.put("required", JSONArray(listOf("id", "confirm")))
+                    exposed.put("description", "Permanently delete a note or to-do list. Ask the user to confirm first.")
+                }
+                put(exposed)
+            }
+        }
+        // ---- In-app terminal, via the existing LocalTerminalBridge
+        put(tool("jarvis_terminal_list_sessions", "List in-app terminal sessions with working directory and running-command status.", emptyList()))
+        put(tool("jarvis_terminal_create_session", "Create an in-app terminal session.", emptyList(),
+            "working_dir" to prop("string", "Optional starting directory"),
+            "force_shell" to prop("string", "Optional shell executable")))
+        put(tool("jarvis_terminal_send_command",
+            "Run a command in an in-app terminal session (defaults to the active session). Use only when the user requested the command or it is necessary for their task.",
+            listOf("command"),
+            "session_id" to prop("string", "Session id or name; defaults to the active session"),
+            "command" to prop("string", "Command to execute"),
+            "append_enter" to prop("boolean", "Send Enter after the command (default true)"),
+            "control_key" to prop("string", "Send a control key instead of a command, e.g. CTRL+C, CTRL+D or ENTER")))
+        put(tool("jarvis_terminal_read_output", "Read recent terminal output, either the last command and its status or the raw transcript.", emptyList(),
+            "session_id" to prop("string", "Session id or name; defaults to the active session"),
+            "mode" to prop("string", "last_command (default) or raw", listOf("last_command", "raw")),
+            "lines_count" to prop("integer", "Maximum output lines (default 100)")))
+        put(tool("jarvis_terminal_kill_process", "Stop a terminal process. Ask the user to confirm before calling with confirm=true.", listOf("confirm"),
+            "session_id" to prop("string", "Session id or name; defaults to the active session"),
+            "signal" to prop("string", "Signal (default SIGINT)", listOf("SIGINT", "SIGTERM", "SIGKILL", "CTRL+C")),
+            "confirm" to prop("boolean", "Must be true after user confirmation")))
+        put(tool("jarvis_terminal_close_session", "Close and destroy a terminal session. Ask the user to confirm before calling with confirm=true.",
+            listOf("session_id", "confirm"),
+            "session_id" to prop("string", "Session id or name"),
+            "confirm" to prop("boolean", "Must be true after user confirmation")))
         put(tool("jarvis_stop_all",
             "Emergency stop: silence Jarvis, drop queued messages, and stop the Jarvis chat's current work (tasks keep running). Use when the user says stop or cancel.", emptyList()))
         // ---- state and app help
@@ -385,7 +436,19 @@ object JarvisMcp {
         val textChat = caller != JarvisManagers.VOICE
         friendlyStatus(name, args)?.let { if (textChat) JarvisManagers.setStatus(caller, it) else JarvisController.postStatus(it, explicit = false) }
         return try {
-            when (name) {
+            when {
+                name.startsWith("jarvis_notes_") -> {
+                    if (name == "jarvis_notes_delete" && !args.optBoolean("confirm")) {
+                        error("Ask the user to confirm deleting this note, then pass confirm=true.")
+                    } else {
+                        ai.antigem.data.notes.NotesMcp.call(context, name.removePrefix("jarvis_"), args)
+                    }
+                }
+                name.startsWith("jarvis_browser_") -> ai.antigem.ui.browser.mcp.BrowserMcp.call(
+                    context, name.removePrefix("jarvis_"), args
+                )
+                name.startsWith("jarvis_terminal_") -> terminalCall(context, name, args)
+                else -> when (name) {
                 "jarvis_speak" -> {
                     val t = args.optString("text").trim()
                     if (t.isEmpty()) return error("text is empty")
@@ -593,6 +656,7 @@ object JarvisMcp {
                     text("Saved.")
                 }
                 else -> error("Unknown tool $name")
+                }
             }
         } catch (e: Exception) {
             error("$name failed: ${e.message ?: e.javaClass.simpleName}")
@@ -602,6 +666,57 @@ object JarvisMcp {
     // ---------------- helpers
 
     private val vm get() = JarvisController.vm
+
+    private suspend fun terminalCall(context: Context, name: String, args: JSONObject): JSONObject {
+        val terminal = ai.antigem.data.local.LocalTerminalBridge.instance
+        terminal.init(context)
+        val sessionId = args.optString("session_id").ifBlank { null }
+        return when (name) {
+            "jarvis_terminal_list_sessions" -> json(JSONObject().put("sessions", terminal.listSessionsJson()))
+            "jarvis_terminal_create_session" -> terminal.createSession(
+                args.optString("working_dir").ifBlank { null },
+                args.optString("force_shell").ifBlank { null }
+            ).fold(
+                onSuccess = { json(it.toJsonObject()) },
+                onFailure = { error(it.message ?: "Could not create terminal session.") }
+            )
+            "jarvis_terminal_send_command" -> {
+                val command = args.optString("command")
+                val controlKey = args.optString("control_key").ifBlank { null }
+                val result = if (controlKey != null) terminal.sendControlKey(sessionId, controlKey)
+                    else if (command.isBlank()) return error("Pass command or control_key.")
+                    else terminal.sendCommand(sessionId, command, args.optBoolean("append_enter", true))
+                result.fold(
+                    onSuccess = { text(if (controlKey != null) "Sent $controlKey." else "Sent command to terminal.") },
+                    onFailure = { error(it.message ?: "Terminal command failed.") }
+                )
+            }
+            "jarvis_terminal_read_output" -> {
+                val lines = args.optInt("lines_count", 100).coerceIn(1, 500)
+                if (args.optString("mode", "last_command") == "raw") {
+                    terminal.readTranscript(sessionId, lines).fold(::text) { error(it.message ?: "Could not read terminal output.") }
+                } else {
+                    terminal.getLastExecution(sessionId, lines).fold(::json) { error(it.message ?: "Could not read terminal output.") }
+                }
+            }
+            "jarvis_terminal_kill_process" -> {
+                if (!args.optBoolean("confirm")) return error("Ask the user to confirm stopping the process, then pass confirm=true.")
+                terminal.killProcess(sessionId, args.optString("signal", "SIGINT")).fold(
+                    { text("Sent ${args.optString("signal", "SIGINT")} to the terminal process.") },
+                    { error(it.message ?: "Could not stop the process.") }
+                )
+            }
+            "jarvis_terminal_close_session" -> {
+                if (!args.optBoolean("confirm")) return error("Ask the user to confirm closing the session, then pass confirm=true.")
+                val id = args.optString("session_id").ifBlank { return error("session_id is required.") }
+                terminal.closeSession(id).fold(
+                    { text("Closed terminal session $id.") },
+                    { error(it.message ?: "Could not close the terminal session.") }
+                )
+            }
+            else -> error("Unknown terminal tool $name")
+        }
+    }
 
     /** The card line for a tool, so the user sees progress even when the model forgets jarvis_status. */
     private fun friendlyStatus(name: String, args: JSONObject): String? = when (name) {
@@ -641,6 +756,12 @@ object JarvisMcp {
         "jarvis_ide_close_file", "jarvis_ide_get_open_files" -> "Checking the editor"
         "jarvis_ide_search_code" -> "Searching the code"
         "jarvis_open_url" -> "Opening the page"
+        "jarvis_notes_list", "jarvis_notes_get" -> "Checking your notes"
+        "jarvis_notes_create", "jarvis_notes_update", "jarvis_notes_delete", "jarvis_notes_todo_add_items",
+        "jarvis_notes_todo_set_item", "jarvis_notes_todo_remove_item", "jarvis_notes_todo_bulk" -> "Updating your notes"
+        "jarvis_terminal_list_sessions", "jarvis_terminal_read_output" -> "Checking the terminal"
+        "jarvis_terminal_create_session", "jarvis_terminal_send_command" -> "Running a terminal command"
+        "jarvis_terminal_kill_process", "jarvis_terminal_close_session" -> "Stopping terminal work"
         "jarvis_set_timer", "jarvis_cancel_timer" -> "Setting a timer"
         "jarvis_get_health" -> "Checking the system"
         "jarvis_github_status" -> "Checking GitHub"

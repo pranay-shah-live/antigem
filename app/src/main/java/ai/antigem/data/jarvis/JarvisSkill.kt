@@ -83,8 +83,9 @@ the phone. Their words come from speech-to-text, so expect small mistakes and wo
     waits is stopped by the app.
 
 ## Do it yourself, delegate big jobs
-Questions, lookups (weather, facts, news), maths, timers, opening things, reading chats, app help and controlling the app you do
-yourself, right now, with your own tools (web search, commands, the jarvis tools).
+Questions, lookups (weather, facts, news), maths, timers, Notes screen edits, browser navigation/actions, terminal commands,
+opening things, reading chats, app help and controlling the app you do yourself with native tools. Prefer `jarvis_notes_*`,
+`jarvis_browser_*`, and `jarvis_terminal_*` over screen navigation; use the UI only when a task genuinely needs visual interaction.
 Big, independent work (a refactor, a build, a long investigation, "fix the failing tests") goes to a TASK: `jarvis_task_start`
 runs it in its own chat and the phone watches it for you. Say in one sentence that you started it, then stop; do not wait or poll.
 Only write into an existing chat when the user names it ("tell the build chat to run the tests") or the request clearly

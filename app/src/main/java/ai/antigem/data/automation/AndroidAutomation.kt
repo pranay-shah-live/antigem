@@ -42,6 +42,52 @@ object AndroidAutomation {
     private const val ADB_NEEDED = "This needs ADB. Ask the user to open AntiGem → Settings → ADB Connect and connect " +
         "(pair once, with Wireless debugging on), then try again."
 
+    /** Direct elevated execution via Shizuku (rish) when available. */
+    object ShizukuShell {
+        private val rishFile by lazy {
+            val candidates = listOf(
+                java.io.File("/data/user/0/ai.antigem/files/usr/bin/rish"),
+                java.io.File("/data/user/0/ai.antidev/files/usr/bin/rish")
+            )
+            candidates.firstOrNull { it.exists() && it.canExecute() }
+        }
+
+        fun isAvailable(): Boolean = rishFile != null
+
+        fun exec(command: String, timeoutSeconds: Int = 30): Pair<Int, String> {
+            val bin = rishFile?.absolutePath ?: "rish"
+            return try {
+                val process = ProcessBuilder(bin, "-c", command)
+                    .redirectErrorStream(true)
+                    .start()
+                val finished = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    process.waitFor(timeoutSeconds.toLong(), java.util.concurrent.TimeUnit.SECONDS)
+                } else {
+                    process.waitFor()
+                    true
+                }
+                if (!finished) {
+                    process.destroyForcibly()
+                    return -1 to "Command timed out after ${timeoutSeconds}s"
+                }
+                val output = process.inputStream.bufferedReader().readText()
+                process.exitValue() to output
+            } catch (e: Exception) {
+                -1 to (e.message ?: "Failed to execute rish")
+            }
+        }
+    }
+
+    private fun runPrivilegedShell(command: String, timeoutSeconds: Int = 30): Pair<Int, String>? {
+        if (ShizukuShell.isAvailable()) {
+            val res = ShizukuShell.exec(command, timeoutSeconds)
+            if (res.first == 0 || !res.second.contains("permission denied", ignoreCase = true)) {
+                return res
+            }
+        }
+        return null
+    }
+
     /** Elements of the latest android_get_ui_tree, by id. */
     private val elements = ConcurrentHashMap<String, AccessibilityNodeInfo>()
 
@@ -238,16 +284,32 @@ object AndroidAutomation {
                     if (out.contains("Success")) text("Installed.\n$out") else error(out.ifBlank { "adb install failed" })
                 }
                 "android_uninstall_app" -> uninstall(context, svc, args)
-                "android_force_stop_app" -> withAdb { d ->
+                "android_force_stop_app" -> {
                     val pkg = packageArg(args)
-                    AdbConnectManager.deviceShell(d, "am force-stop $pkg")
-                    text("Force-stopped $pkg.")
+                    val shizukuRes = runPrivilegedShell("am force-stop $pkg")
+                    if (shizukuRes != null && shizukuRes.first == 0) {
+                        text("Force-stopped $pkg.")
+                    } else {
+                        withAdb { d ->
+                            AdbConnectManager.deviceShell(d, "am force-stop $pkg")
+                            text("Force-stopped $pkg.")
+                        }
+                    }
                 }
-                "android_adb_shell" -> withAdb { d ->
+                "android_adb_shell" -> {
+                    val cmd = args.getString("command")
                     val seconds = args.optInt("timeout_seconds", 30).coerceIn(1, 300)
-                    val result = AdbConnectManager.deviceShell(d, args.getString("command"), seconds)
-                    val out = result.output.ifBlank { "(no output)" }.let { if (it.length > 60_000) it.take(60_000) + "\n…(truncated)" else it }
-                    if (result.exitCode == 0) text(out) else error("Exit code ${result.exitCode}\n$out")
+                    val shizukuRes = runPrivilegedShell(cmd, seconds)
+                    if (shizukuRes != null) {
+                        val out = shizukuRes.second.ifBlank { "(no output)" }.let { if (it.length > 60_000) it.take(60_000) + "\n…(truncated)" else it }
+                        if (shizukuRes.first == 0) text(out) else error("Exit code ${shizukuRes.first}\n$out")
+                    } else {
+                        withAdb { d ->
+                            val result = AdbConnectManager.deviceShell(d, cmd, seconds)
+                            val out = result.output.ifBlank { "(no output)" }.let { if (it.length > 60_000) it.take(60_000) + "\n…(truncated)" else it }
+                            if (result.exitCode == 0) text(out) else error("Exit code ${result.exitCode}\n$out")
+                        }
+                    }
                 }
                 else -> error("Unknown tool $name")
             }

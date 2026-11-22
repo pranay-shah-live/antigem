@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 object ChatViewModelHolder : ViewModelStoreOwner {
     private val globalStore = ViewModelStore()
@@ -11,13 +13,18 @@ object ChatViewModelHolder : ViewModelStoreOwner {
 
     @Volatile
     private var instance: ChatViewModel? = null
+    private val _instanceFlow = MutableStateFlow<ChatViewModel?>(null)
+    val instanceFlow = _instanceFlow.asStateFlow()
 
     fun get(application: Application): ChatViewModel {
         return instance ?: synchronized(this) {
             instance ?: ViewModelProvider(
                 this,
                 ViewModelProvider.AndroidViewModelFactory.getInstance(application)
-            )[ChatViewModel::class.java].also { instance = it }
+            )[ChatViewModel::class.java].also {
+                instance = it
+                _instanceFlow.value = it
+            }
         }
     }
 

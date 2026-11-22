@@ -57,6 +57,11 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -196,10 +201,13 @@ private fun CallContent(
     val context = LocalContext.current
     val voice = AgyVoicePreferences.voiceOf(st.voice)
     val captionsOn by AgyVoicePreferences.captions.collectAsState()
+    val progressMode by AgyVoicePreferences.progressMode.collectAsState()
     val clock = rememberCallClock(st.connectedAt)
     var showVoices by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     var showLog by remember { mutableStateOf(false) }
+    var showTextInput by remember { mutableStateOf(false) }
+    var textInput by remember { mutableStateOf("") }
 
     // a call keeps the screen on; a light tap when the agent picks up and when the call drops
     val view = LocalView.current
@@ -260,12 +268,54 @@ private fun CallContent(
                 }
             }
 
+            // ---- 3-mode workflow progress selector
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.White.copy(alpha = 0.08f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val modes = listOf(
+                            AgyVoicePreferences.PROGRESS_MILESTONE to "Milestones",
+                            AgyVoicePreferences.PROGRESS_VERBOSE to "Verbose",
+                            AgyVoicePreferences.PROGRESS_SILENT to "Silent"
+                        )
+                        modes.forEach { (m, label) ->
+                            val selected = progressMode == m
+                            Surface(
+                                onClick = { AgyVoicePreferences.setProgressMode(m) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) Color.White.copy(alpha = 0.22f) else Color.Transparent,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            ) {
+                                Text(
+                                    label,
+                                    color = if (selected) Color.White else Color.White.copy(alpha = 0.6f),
+                                    fontSize = 11.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // ---- status
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 statusLine(st, agentWorking),
                 color = Color.White.copy(alpha = if (st.phase == Phase.LIVE) 0.8f else 0.6f),
-                fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
+                fontSize = 13.5.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
             )
 
             // ---- orb
@@ -289,27 +339,70 @@ private fun CallContent(
                     onClose = { AgyVoiceCall.end() }
                 )
             } else if (captionsOn) {
-                Captions(st, voice, Modifier.fillMaxWidth().height(if (compact) 120.dp else 170.dp))
+                Captions(st, voice, Modifier.fillMaxWidth().height(if (compact) 100.dp else 160.dp))
             } else {
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // ---- inline text correction input
+            AnimatedVisibility(visible = showTextInput) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.White.copy(alpha = 0.12f))
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BasicTextField(
+                        value = textInput,
+                        onValueChange = { textInput = it },
+                        modifier = Modifier.weight(1f),
+                        textStyle = TextStyle(color = Color.White, fontSize = 13.5.sp),
+                        cursorBrush = SolidColor(Color.White),
+                        singleLine = true,
+                        decorationBox = { inner ->
+                            if (textInput.isBlank()) {
+                                Text("Type correction or command…", color = Color.White.copy(alpha = 0.45f), fontSize = 13.sp)
+                            }
+                            inner()
+                        }
+                    )
+                    IconButton(
+                        onClick = {
+                            if (textInput.isNotBlank()) {
+                                AgyVoiceCall.sendTextCorrection(textInput)
+                                textInput = ""
+                            }
+                        },
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(Icons.Default.ArrowUpward, "Send", tint = Color.White, modifier = Modifier.size(17.dp))
+                    }
+                }
             }
 
             // ---- controls
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
             if (st.phase != Phase.FAILED) {
+                val ctrlSize = if (compact) 42.dp else 52.dp
+                val endSize = if (compact) 46.dp else 58.dp
+                val iconSize = if (compact) 20.dp else 24.dp
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                    RoundControl(if (st.muted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (st.muted) "Unmute" else "Mute", active = st.muted) { AgyVoiceCall.toggleMute() }
-                    RoundControl(if (st.speaker) Icons.Rounded.VolumeUp else Icons.Rounded.Hearing, if (st.speaker) "Speaker" else "Earpiece", active = st.speaker) { AgyVoiceCall.toggleSpeaker() }
-                    RoundControl(if (captionsOn) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionDisabled, "Captions", active = captionsOn) {
+                    RoundControl(if (st.muted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (st.muted) "Unmute" else "Mute", active = st.muted, size = ctrlSize, iconSize = iconSize) { AgyVoiceCall.toggleMute() }
+                    RoundControl(if (st.speaker) Icons.Rounded.VolumeUp else Icons.Rounded.Hearing, if (st.speaker) "Speaker" else "Earpiece", active = st.speaker, size = ctrlSize, iconSize = iconSize) { AgyVoiceCall.toggleSpeaker() }
+                    RoundControl(if (captionsOn) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionDisabled, "Captions", active = captionsOn, size = ctrlSize, iconSize = iconSize) {
                         AgyVoicePreferences.setCaptions(!captionsOn)
                     }
-                    RoundControl(Icons.Rounded.Tune, "Voice", active = false) { showVoices = true }
+                    RoundControl(Icons.Default.Edit, "Type", active = showTextInput, size = ctrlSize, iconSize = iconSize) { showTextInput = !showTextInput }
+                    RoundControl(Icons.Rounded.Tune, "Voice", active = false, size = ctrlSize, iconSize = iconSize) { showVoices = true }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Surface(onClick = { AgyVoiceCall.end() }, shape = CircleShape, color = CallRed, modifier = Modifier.size(64.dp)) {
-                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.CallEnd, "End call", tint = Color.White, modifier = Modifier.size(30.dp)) }
+                        Surface(onClick = { AgyVoiceCall.end() }, shape = CircleShape, color = CallRed, modifier = Modifier.size(endSize)) {
+                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.CallEnd, "End call", tint = Color.White, modifier = Modifier.size(if (compact) 22.dp else 28.dp)) }
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Text("End", color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text("End", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
                     }
                 }
             }
@@ -375,21 +468,28 @@ private fun LiveDot(color: Color) {
 }
 
 @Composable
-private fun RoundControl(icon: ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
+private fun RoundControl(
+    icon: ImageVector,
+    label: String,
+    active: Boolean,
+    size: androidx.compose.ui.unit.Dp = 52.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 23.dp,
+    onClick: () -> Unit
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Surface(
             onClick = onClick,
             shape = CircleShape,
             color = if (active) Color.White else Color.White.copy(alpha = 0.10f),
             border = BorderStroke(1.dp, Color.White.copy(alpha = if (active) 0f else 0.10f)),
-            modifier = Modifier.size(52.dp)
+            modifier = Modifier.size(size)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, label, tint = if (active) Ink else Color.White, modifier = Modifier.size(23.dp))
+                Icon(icon, label, tint = if (active) Ink else Color.White, modifier = Modifier.size(iconSize))
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(label, color = Color.White.copy(alpha = 0.7f), fontSize = 11.5.sp, maxLines = 1)
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1)
     }
 }
 

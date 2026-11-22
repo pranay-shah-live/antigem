@@ -14,7 +14,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -138,7 +144,12 @@ fun FloatingChatWindow(
         derivedStateOf { imeInsets.getBottom(density) > navInsets.getBottom(density) }
     }
 
-    Box(
+    var offsetX by rememberSaveable { mutableFloatStateOf(0f) }
+    var offsetY by rememberSaveable { mutableFloatStateOf(0f) }
+    var customWidthDp by rememberSaveable { mutableFloatStateOf(0f) }
+    var customHeightDp by rememberSaveable { mutableFloatStateOf(0f) }
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
@@ -150,43 +161,58 @@ fun FloatingChatWindow(
             .statusBarsPadding()
             .imePadding()
     ) {
-        Column(
+        val maxAvailableW = maxWidth
+        val maxAvailableH = maxHeight
+        val cardW = if (customWidthDp > 0f) customWidthDp.dp.coerceIn(280.dp, maxAvailableW) else maxAvailableW * 0.95f
+        val cardH = if (isKeyboardOpen) maxAvailableH else if (customHeightDp > 0f) customHeightDp.dp.coerceIn(340.dp, maxAvailableH) else maxAvailableH * 0.90f
+
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    top = 8.dp,
-                    bottom = if (isKeyboardOpen) 0.dp else 16.dp
-                ),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .align(Alignment.Center)
+                .offset { IntOffset(offsetX.roundToInt(), if (isKeyboardOpen) 0 else offsetY.roundToInt()) }
+                .size(cardW, cardH)
         ) {
-            Box(
-                modifier = if (isKeyboardOpen) {
-                    Modifier
-                        .fillMaxWidth(0.98f)
-                        .weight(1f)
-                } else {
-                    Modifier
-                        .fillMaxWidth(0.98f)
-                        .fillMaxHeight(0.92f)
-                }
+            // Multitasking Floating Window Card
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {} // Consume clicks inside card
+                    ),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 0.dp,
+                shadowElevation = 18.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
-                // Multitasking Floating Window Card
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {} // Consume clicks inside card
-                        ),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.background,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 18.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Draggable Grab Handle at Top
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(20.dp)
+                            .pointerInput(Unit) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    offsetX += dragAmount.x
+                                    offsetY += dragAmount.y
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f))
+                        )
+                    }
+
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         // Persistent Floating Chat Screen
                         Box(
                             modifier = Modifier
@@ -222,9 +248,7 @@ fun FloatingChatWindow(
                                 viewModel = viewModel,
                                 isVisible = currentViewMode == AppViewMode.IDE,
                                 onNavigateToChat = { currentViewMode = AppViewMode.CHAT },
-                                onExecuteRunCommand = { cmd ->
-                                    // Connect with terminal / chat execution
-                                },
+                                onExecuteRunCommand = { cmd -> },
                                 onNavigateToTerminal = { currentViewMode = AppViewMode.TERMINAL },
                                 onNavigateToBrowser = { currentViewMode = AppViewMode.BROWSER }
                             )
@@ -266,6 +290,36 @@ fun FloatingChatWindow(
                     }
                 }
             }
+
+            // Bottom-right Resize Grip
+            if (!isKeyboardOpen) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .align(Alignment.BottomEnd)
+                        .pointerInput(density) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                with(density) {
+                                    val currentW = cardW.toPx()
+                                    val currentH = cardH.toPx()
+                                    customWidthDp = (currentW + dragAmount.x).toDp().value
+                                    customHeightDp = (currentH + dragAmount.y).toDp().value
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.BottomEnd
+                ) {
+                    Canvas(modifier = Modifier.size(14.dp).padding(end = 4.dp, bottom = 4.dp)) {
+                        val w = size.width
+                        val h = size.height
+                        val c = Color.Gray.copy(alpha = 0.45f)
+                        drawLine(c, Offset(w, h * 0.4f), Offset(w * 0.4f, h), strokeWidth = 2.dp.toPx())
+                        drawLine(c, Offset(w, h * 0.75f), Offset(w * 0.75f, h), strokeWidth = 2.dp.toPx())
+                    }
+                }
+            }
         }
+    }
     }
 }
