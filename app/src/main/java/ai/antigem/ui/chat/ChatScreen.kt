@@ -444,6 +444,7 @@ fun ChatScreen(
     // A launcher shortcut or the Quick Settings tile asked for a live voice call: start it here, where the call lives
     val voiceCallRequested by ai.antigem.data.voice.VoiceCallShortcut.pending.collectAsState()
     var assistantCallQueued by remember { mutableStateOf(false) }
+    var newAssistantConversationId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(voiceCallRequested) {
         val request = ai.antigem.data.voice.VoiceCallShortcut.consume(isInFloatingWindow) ?: return@LaunchedEffect
         if (request.assistant && !voiceCall.active) {
@@ -468,9 +469,7 @@ fun ChatScreen(
                 }
             } else if (savedId == null) {
                 viewModel.startNewChat(ai.antigem.domain.model.AgentKind.AGY)
-                viewModel.currentConversation.value?.id?.let {
-                    ai.antigem.data.voice.VoiceCallShortcut.saveAssistantConversationId(context, it)
-                }
+                newAssistantConversationId = viewModel.currentConversation.value?.id
             } else {
                 viewModel.selectConversation(savedId)
                 val loaded = kotlinx.coroutines.withTimeoutOrNull(15_000) {
@@ -488,6 +487,13 @@ fun ChatScreen(
             assistantCallQueued = true
         } else {
             assistantCallQueued = true
+        }
+    }
+    LaunchedEffect(newAssistantConversationId, voiceCall.conversationId) {
+        val id = newAssistantConversationId
+        if (id != null && voiceCall.active && voiceCall.conversationId == id) {
+            ai.antigem.data.voice.VoiceCallShortcut.saveAssistantConversationId(context, id)
+            newAssistantConversationId = null
         }
     }
     // before the first call: pick a voice (swipe through them and hear each one)
@@ -3097,15 +3103,18 @@ fun ChatScreen(
     }
 
     // the Antigravity voice call screen (Back minimizes it to the pill above the message box)
-    ai.antigem.ui.voice.AgyVoiceCallScreen(
-        agentWorking = isActivelyRunning && currentConv?.id == voiceCall.conversationId,
-        onOpenAgySettings = {
-            requestedSettingsSection = ai.antigem.ui.settings.SettingsSection.AGY_CLI
-            showSettingsDialog = true
-        },
-        compact = isInFloatingWindow,
-        onExpand = onOpenFullScreen
-    )
+    val floatingCallWindowOpen by ai.antigem.data.voice.VoiceCallShortcut.floatingWindowOpen.collectAsState()
+    if (isInFloatingWindow || !floatingCallWindowOpen) {
+        ai.antigem.ui.voice.AgyVoiceCallScreen(
+            agentWorking = isActivelyRunning && currentConv?.id == voiceCall.conversationId,
+            onOpenAgySettings = {
+                requestedSettingsSection = ai.antigem.ui.settings.SettingsSection.AGY_CLI
+                showSettingsDialog = true
+            },
+            compact = isInFloatingWindow,
+            onExpand = onOpenFullScreen
+        )
+    }
 
     // Model Selector Bottom Sheet (Active Model at Top & Expandable Categories)
     if (isClaudeChat) ai.antigem.ui.claude.ClaudeProviderSwitchDialog(claudeBackend)

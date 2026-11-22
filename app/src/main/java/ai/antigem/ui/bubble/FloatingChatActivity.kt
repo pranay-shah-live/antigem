@@ -87,6 +87,16 @@ class FloatingChatActivity : ComponentActivity() {
         handleVoiceCallIntent(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        VoiceCallShortcut.setFloatingWindowOpen(true)
+    }
+
+    override fun onStop() {
+        VoiceCallShortcut.setFloatingWindowOpen(false)
+        super.onStop()
+    }
+
     private fun handleVoiceCallIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(MainActivity.EXTRA_START_VOICE_CALL, false) != true) return
         intent.removeExtra(MainActivity.EXTRA_START_VOICE_CALL)

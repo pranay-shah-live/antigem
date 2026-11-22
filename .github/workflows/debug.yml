@@ -39,10 +39,13 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ANTIGEM_DEBUG_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANTIGEM_DEBUG_KEYSTORE_PASSWORD }}
+          EXPECTED_CERT_SHA256: 0A441900C91CA2F9E8B42E4B89AAE3C67294794A736EB6B2F48BCE66F682DF85
         run: |
           test -n "$KEYSTORE_BASE64" || { echo "Missing ANTIGEM_DEBUG_KEYSTORE_BASE64 secret"; exit 1; }
           test -n "$KEYSTORE_PASSWORD" || { echo "Missing ANTIGEM_DEBUG_KEYSTORE_PASSWORD secret"; exit 1; }
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/antigem-debug.p12"
+          ACTUAL_CERT_SHA256=$(keytool -list -v -keystore "$RUNNER_TEMP/antigem-debug.p12" -storepass "$KEYSTORE_PASSWORD" -alias antigem-debug | awk '/SHA256:/ {gsub(":", "", $2); print toupper($2); exit}')
+          test "$ACTUAL_CERT_SHA256" = "$EXPECTED_CERT_SHA256" || { echo "Persistent debug key certificate mismatch"; exit 1; }
 
       - name: Build debug APK (arm64)
         env:
@@ -52,6 +55,17 @@ jobs:
             -PdebugKeystore="$RUNNER_TEMP/antigem-debug.p12" \
             -PdebugStorePassword="$KEYSTORE_PASSWORD" \
             -PdebugKeyAlias=antigem-debug
+
+      - name: Verify APK signature
+        env:
+          EXPECTED_CERT_SHA256: 0A441900C91CA2F9E8B42E4B89AAE3C67294794A736EB6B2F48BCE66F682DF85
+        run: |
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -print | sort -V | tail -1)
+          test -n "$APK" && test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apk-signature.txt"
+          APK_CERT_SHA256=$(awk '/Signer #1 certificate SHA-256 digest:/ {gsub(":", "", $NF); print toupper($NF); exit}' "$RUNNER_TEMP/apk-signature.txt")
+          test "$APK_CERT_SHA256" = "$EXPECTED_CERT_SHA256" || { echo "APK was not signed with the persistent debug key"; exit 1; }
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -30,12 +30,18 @@ object VoiceCallShortcut {
     private const val ASSISTANT_CHAT_ID = "conversation_id"
 
     private val _pending = MutableStateFlow<Request?>(null)
+    private val _floatingWindowOpen = MutableStateFlow(false)
 
     /** A call was asked for and not taken yet. */
     val pending: StateFlow<Request?> = _pending
+    val floatingWindowOpen: StateFlow<Boolean> = _floatingWindowOpen
 
     fun request(request: Request = Request()) {
         _pending.value = request
+    }
+
+    fun setFloatingWindowOpen(open: Boolean) {
+        _floatingWindowOpen.value = open
     }
 
     /** Takes a matching request once; the main chat cannot steal a request meant for the floating window. */
