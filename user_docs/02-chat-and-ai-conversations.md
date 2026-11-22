@@ -13,7 +13,7 @@ When you are on the Chat screen, you will see:
    - **Choose project**: Tap the folder icon (**Choose project**) to open the workspace folder browser (**Choose the project folder**). This tells the AI which folder on your phone or server contains your code.
    - **Agent Selector**: A pill at the top allowing you to switch between **Antigravity**, **Claude Code**, or **OpenCode**.
    - **Model Selector**: Displays the currently selected model. Tapping it opens the Model Selector bottom sheet with live quotas and thinking effort levels.
-   - **Minimize to Bubble**: Tap the bubble icon in the top bar to shrink AntiGem into a floating Android overlay window (`FloatingChatActivity`), letting you chat while using other apps.
+   - **Minimize to Bubble / Floating Window**: Tap the bubble icon in the top bar to shrink AntiGem into a floating Android overlay window (`FloatingChatActivity`). The floating window can be freely dragged via its top handle bar and resized using the bottom-right corner grip.
    - **Chat Telemetry & Tokens**: Tap the info / telemetry icon to view token usage, latency, and context window limits.
 2. **System Status Banners**:
    - **Antigravity Disconnected**: Displays at the top if the connection to the AGY Hub is lost, alongside an automatic reconnection indicator (*"Connecting to Antigravity..."*).
@@ -151,6 +151,22 @@ Whenever you type a forward slash (`/`) into the chat input bar, an auto-complet
 - `/grill-me` — Asks the agent to interview you with clarifying questions to make sure all project details are crystal clear.
 - `/boost` — Activates maximum reasoning effort for tricky algorithmic or debugging problems.
 - `/learn` — Teaches the agent a specific rule or convention you want it to remember for future chats.
+
+---
+
+## 📞 6. Antigravity Live Voice Calls
+
+Antigravity features a full-duplex live spoken call interface directly linked to your active conversation:
+- **Starting a Call**: Tap the headphones/call icon in the input bar, or tap the **Gemini Voice** Quick Settings tile / home screen shortcut.
+- **Floating Call Window**: Runs in a movable, resizable card over your apps.
+- **Controls**:
+  - **Mute / Unmute**: Toggle microphone input.
+  - **Speaker / Earpiece**: Switch audio output between loud speaker and handset earpiece.
+  - **Captions**: Real-time display of user speech and agent spoken transcript.
+  - **Type / Text Hook**: Tap the edit/text icon to reveal an inline text field to inject written corrections or commands directly into the call while Gemini responds in voice audio.
+  - **Voice / Equalizer**: Choose between Gemini's voices (Fola, Arlo, Cleo, Finn, Gero, Lora, Neno, Olin, Tari) and set playback speed.
+  - **Progress Modes**: Toggle between **Milestones** (speaks only major checkpoints), **Verbose** (spoken updates on every turn), and **Silent** (text status only).
+  - **End Call**: Hangs up the session and saves the transcript to the conversation history.
 
 ---
 
