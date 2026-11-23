@@ -26,13 +26,14 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
-import androidx.lifecycle.ViewTreeLifecycleOwner
-import androidx.lifecycle.ViewTreeViewModelStoreOwner
-import androidx.activity.ViewTreeOnBackPressedDispatcherOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
@@ -70,8 +71,8 @@ class FloatingChatOverlayService : LifecycleService(), SavedStateRegistryOwner, 
                 .putExtra(FloatingActivityResultRelayActivity.EXTRA_TARGET, target)
                 .putExtra(FloatingActivityResultRelayActivity.EXTRA_REQUEST_CODE, requestCode)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            target.getStringArrayExtra(EXTRA_PERMISSIONS)?.let {
-                if (target.action == ACTION_REQUEST_PERMISSIONS) relay.putExtra(FloatingActivityResultRelayActivity.EXTRA_PERMISSIONS, it)
+            target.getStringArrayExtra(FloatingActivityResultRelayActivity.EXTRA_PERMISSIONS)?.let {
+                if (target.action == FloatingActivityResultRelayActivity.ACTION_REQUEST_PERMISSIONS) relay.putExtra(FloatingActivityResultRelayActivity.EXTRA_PERMISSIONS, it)
             }
             startActivity(relay)
         }
@@ -145,10 +146,10 @@ class FloatingChatOverlayService : LifecycleService(), SavedStateRegistryOwner, 
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         }
         composeView = ComposeView(FloatingWindowContext(this, ai.antigem.R.style.Theme_Gemini)).apply {
-            ViewTreeLifecycleOwner.set(this, this@FloatingChatOverlayService)
-            ViewTreeSavedStateRegistryOwner.set(this, this@FloatingChatOverlayService)
-            ViewTreeViewModelStoreOwner.set(this, this@FloatingChatOverlayService)
-            ViewTreeOnBackPressedDispatcherOwner.set(this, this@FloatingChatOverlayService)
+            setViewTreeLifecycleOwner(this@FloatingChatOverlayService)
+            setViewTreeSavedStateRegistryOwner(this@FloatingChatOverlayService)
+            setViewTreeViewModelStoreOwner(this@FloatingChatOverlayService)
+            setViewTreeOnBackPressedDispatcherOwner(this@FloatingChatOverlayService)
             setContent {
                 CompositionLocalProvider(
                     LocalActivityResultRegistryOwner provides this@FloatingChatOverlayService,
@@ -399,9 +400,9 @@ class FloatingActivityResultRelayActivity : Activity() {
         const val EXTRA_TARGET = "target"
         const val EXTRA_REQUEST_CODE = "registry_request_code"
         const val EXTRA_PERMISSIONS = "androidx.activity.result.contract.extra.PERMISSIONS"
-        private const val EXTRA_PERMISSION_GRANT_RESULTS = "androidx.activity.result.contract.extra.PERMISSION_GRANT_RESULTS"
-        private const val ACTION_REQUEST_PERMISSIONS = "androidx.activity.result.contract.action.REQUEST_PERMISSIONS"
-        private const val TARGET_REQUEST = 1
+        const val EXTRA_PERMISSION_GRANT_RESULTS = "androidx.activity.result.contract.extra.PERMISSION_GRANT_RESULTS"
+        const val ACTION_REQUEST_PERMISSIONS = "androidx.activity.result.contract.action.REQUEST_PERMISSIONS"
+        const val TARGET_REQUEST = 1
     }
 }
 
