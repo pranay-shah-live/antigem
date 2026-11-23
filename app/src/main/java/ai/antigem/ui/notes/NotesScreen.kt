@@ -56,14 +56,15 @@ fun NotesScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { NotesRepository.init(context) }
     val notes by NotesRepository.notes.collectAsState()
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(isVisible) { if (!isVisible) focusManager.clearFocus() }
+    LaunchedEffect(isVisible) {
+        if (isVisible) NotesRepository.reload(context) else focusManager.clearFocus()
+    }
 
     fun deleteWithUndo(note: Note) {
         NotesRepository.delete(note.id) ?: return

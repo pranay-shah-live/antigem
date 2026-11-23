@@ -57,7 +57,7 @@ private sealed class ChrootBuildStep {
     data class Failed(val message: String) : ChrootBuildStep()
 }
 
-private const val RELEASES_PAGE = "https://github.com/Santoshkurmi/antigem/releases/latest"
+private const val RELEASES_PAGE = "https://github.com/pranay-shah-live/antigem-fork/releases/latest"
 
 /**
  * The normal build has no Linux bridge, which the Ubuntu chroot runs: instead of the chroot setup, this page downloads

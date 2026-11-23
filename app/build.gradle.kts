@@ -34,10 +34,13 @@ require(targetAbi == "arm64" || targetAbi == "x86_64") { "-Pabi must be arm64 or
 val isX86 = targetAbi == "x86_64"
 
 // The rooted Ubuntu chroot runs a Linux build of the bridge (~4 MB), so the normal arm64 release leaves it out and the
-// chroot one carries it: `-Pchroot=true` (AntiGem-v<version>-chroot.apk). The x86_64 APK always has it (there is one
+// chroot one carries it: `-Pchroot=true` (AntiGem-Fork-v<version>-chroot.apk). The x86_64 APK always has it (there is one
 // x86_64 APK). Without the flag debug builds have it and release builds don't; `-Pchroot=false` leaves it out of debug
 // builds too (to see the normal build's "Get the chroot build" page).
 val chrootProp = (findProperty("chroot") as String?)?.trim()?.lowercase()?.ifEmpty { null }
+val persistentDebugKeystore = (findProperty("debugKeystore") as String?)?.trim()?.ifEmpty { null }
+val persistentDebugStorePassword = (findProperty("debugStorePassword") as String?)?.trim()?.ifEmpty { null }
+val persistentDebugKeyAlias = (findProperty("debugKeyAlias") as String?)?.trim()?.ifEmpty { null }
 require(chrootProp == null || chrootProp == "true" || chrootProp == "false") { "-Pchroot must be true or false, not $chrootProp" }
 fun hasChroot(buildType: String): Boolean = isX86 || when (chrootProp) {
     "true" -> true
@@ -56,7 +59,7 @@ android {
     compileSdk = 37
     compileSdkMinor = 1
     defaultConfig {
-        applicationId = "ai.antigem"
+        applicationId = "ai.antidev"
         minSdk = 24
         targetSdk = 28
         versionCode = appVersionCode
@@ -67,7 +70,7 @@ android {
         ndk { abiFilters += if (isX86) listOf("x86_64") else listOf("arm64-v8a", "armeabi-v7a") }
         // "arm64" or "x86_64": picks the glibc loader and the bundled glibc at run time
         buildConfigField("String", "TARGET_ABI", "\"$targetAbi\"")
-        // "", "-chroot" or "-x86_64": the release file the in-app updater downloads (AntiGem-v<version><suffix>.apk)
+        // "", "-chroot" or "-x86_64": the release file the in-app updater downloads (AntiGem-Fork-v<version><suffix>.apk)
         buildConfigField("String", "APK_SUFFIX", "\"$apkSuffix\"")
     }
 
@@ -81,12 +84,24 @@ android {
             keyAlias = "antigem"
             keyPassword = "123456"
         }
+        if (persistentDebugKeystore != null) {
+            require(!persistentDebugStorePassword.isNullOrBlank()) { "debugStorePassword is required with debugKeystore" }
+            require(!persistentDebugKeyAlias.isNullOrBlank()) { "debugKeyAlias is required with debugKeystore" }
+            create("persistentDebug") {
+                storeFile = file(persistentDebugKeystore)
+                storePassword = persistentDebugStorePassword
+                keyAlias = persistentDebugKeyAlias
+                keyPassword = persistentDebugStorePassword
+            }
+        }
     }
 
-    // Local ports differ per app so they can all run side by side: the old com.termux build uses 1234/1235/8765,
-    // release (ai.antigem) 1236/1237/8767, debug (ai.antidev, see androidComponents below) 1238/1239/8768
+    // Local ports keep Termux, the release variant and the debug variant isolated; the fork uses ai.antidev for both.
     buildTypes {
         debug {
+            if (persistentDebugKeystore != null) {
+                signingConfig = signingConfigs.getByName("persistentDebug")
+            }
             buildConfigField("int", "BRIDGE_PORT", "1238")
             buildConfigField("int", "HUB_PORT", "1239")
             buildConfigField("int", "BROWSER_MCP_PORT", "8768")
@@ -167,6 +182,7 @@ dependencies {
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.lifecycle.service)
   implementation(libs.androidx.activity.compose)
   implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
   implementation("androidx.work:work-runtime-ktx:2.10.0")
@@ -392,7 +408,7 @@ tasks.named("preBuild").configure { dependsOn(bundleMiniAppDocs) }
 
 /**
  * am.apk: the Java code of the Linux system's `am` command (termux-am), built from the termux-am submodule
- * (termux/TermuxAm, see termux-am-build/build.gradle.kts) so that it sends intents as ai.antigem. Termux's own one says
+ * (termux/TermuxAm, see termux-am-build/build.gradle.kts) so that it sends intents as ai.antidev. Termux's own one says
  * com.termux, which Android refuses for this app; TermuxRelocation puts ours in place of it. Each app variant gets the
  * same build type of it (debug app: debug am.apk, release app: release am.apk) as assets/bin/am.apk, from its own
  * generated folder so variants built together can't mix them up.
@@ -547,11 +563,8 @@ androidComponents {
     onVariants { variant ->
         variant.sources.kotlin?.addGeneratedSourceDirectory(generateChangelog, GenerateChangelogTask::outputDir)
 
-        // Debug builds are their own app, ai.antidev ("AntiGem Dev"), so they install next to the release one. It must
-        // have the length of com.termux (10): the Termux packages are rewritten for it byte for byte.
-        // TEMPORARY: x86_64 debug builds stay ai.antigem while the x86_64 rootfs is made on the emulator (its backup
-        // must have ai.antigem paths). Remove `&& !isX86` once that rootfs is hosted.
-        if (variant.buildType == "debug" && !isX86) variant.applicationId.set("ai.antidev")
+        // Every fork build uses ai.antidev, a distinct same-length app ID for Termux's byte-for-byte package rewrite.
+        variant.applicationId.set("ai.antidev")
 
         val amBuildType = if (variant.buildType == "release") "release" else "debug"
         val termuxAm = tasks.register<TermuxAmAssetTask>("termuxAm${variant.name.replaceFirstChar { it.uppercase() }}") {

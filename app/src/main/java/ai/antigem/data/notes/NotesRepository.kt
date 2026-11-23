@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -63,17 +64,31 @@ object NotesRepository {
     @Volatile
     private var file: File? = null
     private var saveJob: Job? = null
+    private var revision = 0L
+    private var savedRevision = 0L
+    private var changedBeforeInit = false
 
     fun init(context: Context) {
         if (file != null) return
+        var needsFlush = false
         synchronized(lock) {
             if (file != null) return
             val dir = File(context.applicationContext.filesDir, "notes").apply { mkdirs() }
             val f = File(dir, "notes.json")
-            _notes.value = runCatching { if (f.exists()) parse(f.readText()) else emptyList() }
-                .onFailure { Log.w(TAG, "Could not read notes, starting empty", it) }
-                .getOrDefault(emptyList())
+            if (!changedBeforeInit) {
+                _notes.value = runCatching { if (f.exists()) parse(f.readText()) else emptyList() }
+                    .onFailure { Log.w(TAG, "Could not read notes, starting empty", it) }
+                    .getOrDefault(emptyList())
+            } else {
+                needsFlush = true
+            }
             file = f
+        }
+        // A write may have arrived through Notes MCP before the UI or application finished initialization.
+        // Preserve that in-memory state and persist it as soon as the storage path is available.
+        if (needsFlush) synchronized(lock) {
+            saveJob?.cancel()
+            saveJob = scope.launch { saveNow() }
         }
     }
 
@@ -130,7 +145,11 @@ object NotesRepository {
     }
 
     private fun mutate(block: (List<Note>) -> List<Note>) {
-        synchronized(lock) { _notes.value = block(_notes.value) }
+        synchronized(lock) {
+            _notes.value = block(_notes.value)
+            revision++
+            changedBeforeInit = changedBeforeInit || file == null
+        }
         scheduleSave()
     }
 
@@ -147,16 +166,43 @@ object NotesRepository {
     }
 
     private fun saveNow() {
-        val f = file ?: return
-        val json = synchronized(lock) { serialize(_notes.value) }
-        runCatching {
+        val (f, snapshot, savedAtRevision) = synchronized(lock) {
+            val destination = file ?: return
+            Triple(destination, serialize(_notes.value), revision)
+        }
+        val saved = runCatching {
             val tmp = File(f.parentFile, "notes.json.tmp")
-            tmp.writeText(json)
+            tmp.writeText(snapshot)
             if (!tmp.renameTo(f)) {
-                f.writeText(json)
+                f.writeText(snapshot)
                 tmp.delete()
             }
-        }.onFailure { Log.w(TAG, "Could not save notes", it) }
+            true
+        }.onFailure { Log.w(TAG, "Could not save notes", it) }.getOrDefault(false)
+        if (saved) synchronized(lock) { savedRevision = maxOf(savedRevision, savedAtRevision) }
+    }
+
+    /** Flush pending edits and reload storage when the Notes screen is shown. */
+    suspend fun reload(context: Context) {
+        init(context)
+        withContext(Dispatchers.IO) {
+            saveNow()
+            val source = synchronized(lock) {
+                val f = file ?: return@withContext
+                f to revision
+            }
+            val loaded = runCatching { if (source.first.exists()) parse(source.first.readText()) else emptyList() }
+                .onFailure { Log.w(TAG, "Could not reload notes; keeping in-memory notes", it) }
+                .getOrNull() ?: return@withContext
+            synchronized(lock) {
+                // Only replace in-memory notes when no new edit arrived while we were reading disk,
+                // and only when the loaded data would not silently wipe out good in-memory notes
+                // (guards against an empty file left by a failed prior save).
+                val noNewEdits = revision == source.second
+                val diskHasData = loaded.isNotEmpty() || _notes.value.isEmpty()
+                if (noNewEdits && diskHasData) _notes.value = loaded
+            }
+        }
     }
 
     fun toJson(note: Note, includeBody: Boolean = true): JSONObject = JSONObject().apply {

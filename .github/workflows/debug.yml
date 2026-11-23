@@ -1,0 +1,68 @@
+name: Debug APK
+
+# Debug build of this branch; the persistent keystore lets future ai.antidev builds update in place.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - standalone
+
+permissions:
+  contents: read
+
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # termux-am (termux/TermuxAm): am.apk is built from it. The other embedded folders are not submodules.
+      - name: Fetch the termux-am submodule
+        run: git submodule update --init --depth 1 termux-am
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare persistent debug signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANTIGEM_DEBUG_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANTIGEM_DEBUG_KEYSTORE_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || { echo "Missing ANTIGEM_DEBUG_KEYSTORE_BASE64 secret"; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo "Missing ANTIGEM_DEBUG_KEYSTORE_PASSWORD secret"; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/antigem-debug.p12"
+
+      - name: Build debug APK (arm64)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANTIGEM_DEBUG_KEYSTORE_PASSWORD }}
+        run: |
+          ./gradlew assembleDebug \
+            -PdebugKeystore="$RUNNER_TEMP/antigem-debug.p12" \
+            -PdebugStorePassword="$KEYSTORE_PASSWORD" \
+            -PdebugKeyAlias=antigem-debug
+
+      - name: Verify APK Signature Digest
+        run: |
+          APK_FILE=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          test -f "$APK_FILE" || { echo "No APK built"; exit 1; }
+          echo "Built APK: $APK_FILE"
+          apksigner verify --print-certs "$APK_FILE"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: antigem-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

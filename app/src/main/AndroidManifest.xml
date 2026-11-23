@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- sharedUserId: AntiGem's own Termux:API and Termux:X11 apps (same signing key) share its files. Adding or removing it
-     later would force users to reinstall, so it stays. It is the app's package name: ai.antigem (release), ai.antidev
-     (debug), so the two never claim the same shared user with different signing keys. -->
+     later would force users to reinstall, so it stays. The fork app ID is ai.antidev. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:sharedUserId="${applicationId}">
@@ -199,10 +198,16 @@
             android:theme="@style/Theme.AntiGem.FloatingTranslucent"
             android:windowSoftInputMode="stateHidden|adjustResize"
             android:excludeFromRecents="true"
-            android:noHistory="true"
             android:autoRemoveFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity=""
+            android:configChanges="uiMode|orientation|screenSize|screenLayout|smallestScreenSize" />
+
+        <activity
+            android:name=".ui.bubble.FloatingActivityResultRelayActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AntiGem.FloatingTranslucent"
+            android:excludeFromRecents="true"
             android:configChanges="uiMode|orientation|screenSize|screenLayout|smallestScreenSize" />
 
         <!-- Termux Open Activity (termux-open / termux-open-url / xdg-open activity intent targets) -->
@@ -297,6 +302,16 @@
             android:name="ai.antigem.data.voice.AgyVoiceCallService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Keeps the draggable, resizable floating app window alive while other apps are in front. -->
+        <service
+            android:name=".ui.bubble.FloatingChatOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Persistent user-requested floating multitasking window" />
+        </service>
 
         <!-- Jarvis Quick Settings tile: tap to talk from anywhere -->
         <service

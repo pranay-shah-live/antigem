@@ -1,10 +1,9 @@
 {
-  "version_code": 133,
-  "version_name": "2.0.2",
+  "version_code": 2030002,
+  "version_name": "F2.0.3-update2",
   "min_supported_version_code": 2,
   "changelog": [
-   "Added chroot support for Linux environments.(rooted android)",
-   "Fixed notification causing app crash in android 7"
+   "Update 2: persistent floating overlay, resizing refinements and Notes sync reliability."
   ],
   "is_critical": false
 }

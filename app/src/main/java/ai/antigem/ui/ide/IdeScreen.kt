@@ -326,7 +326,8 @@ fun IdeScreen(
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = ai.antigem.theme.AppColors.editorPanel,
-                modifier = Modifier.width(300.dp)
+                // Keep the project drawer within the floating window's available width.
+                modifier = Modifier.widthIn(max = 300.dp)
             ) {
                 ProjectSidebar(
                     projects = allProjects,
@@ -704,7 +705,7 @@ fun IdeScreen(
                             DropdownMenu(
                                 expanded = showRunMenu,
                                 onDismissRequest = { showRunMenu = false },
-                                modifier = Modifier.widthIn(min = 250.dp)
+                                modifier = Modifier.widthIn(max = 300.dp)
                             ) {
                                 val activePath = activeTabPath
                                 val activeFile = activePath?.let { File(it) }

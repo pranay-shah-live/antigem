@@ -17,7 +17,7 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "AppUpdateManager"
-private const val DEFAULT_VERSION_URL = "https://raw.githubusercontent.com/santoshkurmi/antigem/standalone/version.json"
+private const val DEFAULT_VERSION_URL = "https://raw.githubusercontent.com/pranay-shah-live/antigem-fork/standalone/version.json"
 
 data class AppUpdateInfo(
     val versionCode: Int,
@@ -82,8 +82,8 @@ class AppUpdateManager(private val context: Context) {
             }
             val isCritical = json.optBoolean("is_critical", false) || (BuildConfig.VERSION_CODE < minSupportedCode)
 
-            // each release (tag v<version>) has the app as AntiGem-v<version>.apk, the chroot build as
-            // AntiGem-v<version>-chroot.apk and the x86_64 build as AntiGem-v<version>-x86_64.apk
+            // each fork release (tag v<version>) has the app as AntiGem-Fork-v<version>.apk, the chroot build as
+            // AntiGem-Fork-v<version>-chroot.apk and the x86_64 build as AntiGem-Fork-v<version>-x86_64.apk
             // (scripts/build_all_apks.sh): an install keeps getting its own kind
             val downloadUrl = apkUrl(remoteVersionName, BuildConfig.APK_SUFFIX)
 
@@ -116,7 +116,7 @@ class AppUpdateManager(private val context: Context) {
     }
 
     private fun apkUrl(versionName: String, suffix: String) =
-        "https://github.com/santoshkurmi/antigem/releases/download/v$versionName/AntiGem-v$versionName$suffix.apk"
+        "https://github.com/pranay-shah-live/antigem-fork/releases/download/v$versionName/AntiGem-Fork-v$versionName$suffix.apk"
 
     /** Whether the release file is on GitHub (a release is published before CI has uploaded its APKs). */
     private fun isPublished(url: String): Boolean = try {
@@ -131,7 +131,7 @@ class AppUpdateManager(private val context: Context) {
     }
 
     /**
-     * The chroot build (AntiGem-v<version>-chroot.apk) for an install of the normal build, which has no Ubuntu chroot:
+     * The chroot build (AntiGem-Fork-v<version>-chroot.apk) for an install of the normal build, which has no Ubuntu chroot:
      * of the newest release when it has one, else of this app's version. Same app and signing key, so it installs over
      * this one and keeps all data.
      */

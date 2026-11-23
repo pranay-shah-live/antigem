@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# AntiGem APK Build & Output Packager
-# Builds the app (ai.antigem). --x86_64 builds the x86_64 APK instead of the arm64 one (gradle -Pabi=x86_64);
+# AntiGem Fork APK Build & Output Packager
+# Builds the fork app (ai.antidev). --x86_64 builds the x86_64 APK instead of the arm64 one (gradle -Pabi=x86_64);
 # --chroot builds the arm64 APK with the Ubuntu chroot's Linux bridge (gradle -Pchroot=true). The normal arm64 release
 # leaves that bridge out; the x86_64 APK always has it. Debug builds have it unless gradle -Pchroot=false.
 # -----------------------------------------------------------------------------
@@ -56,12 +56,12 @@ APKS_SRC="${ROOT_DIR}/app/build/outputs/apk"
 if [[ "${MODE}" == "release" ]]; then
     echo "🔨 Compiling Release (:app:assembleRelease)..."
     "${ROOT_DIR}/gradlew" -p "${ROOT_DIR}" :app:assembleRelease "${GRADLE_ARGS[@]}"
-    # the release asset; the in-app updater downloads releases/download/v<version>/AntiGem-v<version><suffix>.apk
-    cp "${APKS_SRC}/release/${ARCHIVE}-release.apk" "${OUTPUT_DIR}/AntiGem-v${VERSION_NAME}${SUFFIX}.apk"
+    # the release asset; the in-app updater downloads releases/download/v<version>/AntiGem-Fork-v<version><suffix>.apk
+    cp "${APKS_SRC}/release/${ARCHIVE}-release.apk" "${OUTPUT_DIR}/AntiGem-Fork-v${VERSION_NAME}${SUFFIX}.apk"
 else
     echo "🔨 Compiling Debug (:app:assembleDebug)..."
     "${ROOT_DIR}/gradlew" -p "${ROOT_DIR}" :app:assembleDebug "${GRADLE_ARGS[@]}"
-    cp "${APKS_SRC}/debug/${ARCHIVE}-debug.apk" "${OUTPUT_DIR}/AntiGem-v${VERSION_NAME}${SUFFIX}-debug.apk"
+    cp "${APKS_SRC}/debug/${ARCHIVE}-debug.apk" "${OUTPUT_DIR}/AntiGem-Fork-v${VERSION_NAME}${SUFFIX}-debug.apk"
 
     # the APK ships the bridge xz-compressed; the uncompressed build is kept under app/build
     if [[ -f "${ROOT_DIR}/app/build/intermediates/agyIdeBridge/agy_ide_bridge" ]]; then
