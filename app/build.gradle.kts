@@ -36,7 +36,7 @@ fun readRelease(json: Map<*, *>, beta: Boolean): ReleaseVersion {
         else "\"version_code\"$where must be a whole number without quotes, not ${shown(code)}")
 
     val name = json["version_name"]
-    val pattern = if (beta) Regex("""\d+\.\d+\.\d+-beta\.[1-9]\d*""") else Regex("""F?\d+\.\d+\.\d+(-update\d+)?""")
+    val pattern = if (beta) Regex("""F?\d+\.\d+\.\d+-beta\.[1-9]\d*""") else Regex("""F?\d+\.\d+\.\d+(-update\d+)?""")
     if (name !is String || !pattern.matches(name)) versionJsonError(
         if (name == null) "\"version_name\" is missing$where"
         else "\"version_name\"$where must look like ${if (beta) "2.0.4-beta.1" else "2.0.4"}, not ${shown(name)}")
