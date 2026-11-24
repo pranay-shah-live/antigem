@@ -8,7 +8,7 @@ on:
       - standalone
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   debug-apk:
@@ -71,3 +71,25 @@ jobs:
           name: antigem-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Publish or Update GitHub Release for In-App Updating
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION_NAME=$(python3 scripts/release_version.py name)
+          TAG="v${VERSION_NAME}"
+          APK_FILE=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          mkdir -p output
+          RELEASE_ASSET="output/AntiGem-Fork-${TAG}.apk"
+          cp "$APK_FILE" "$RELEASE_ASSET"
+          
+          CHANGELOG=$(python3 scripts/release_version.py changelog)
+          
+          echo "Publishing release $TAG with asset $RELEASE_ASSET..."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$RELEASE_ASSET" --clobber
+          else
+            gh release create "$TAG" "$RELEASE_ASSET" \
+              --title "AntiGem Fork $TAG" \
+              --notes "$CHANGELOG"
+          fi
