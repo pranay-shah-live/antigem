@@ -1,9 +1,19 @@
 {
-  "version_code": 2030002,
-  "version_name": "F2.0.3-update2",
+  "version_code": 2040001,
+  "version_name": "F2.0.4",
   "min_supported_version_code": 2,
   "changelog": [
-   "Update 2: persistent floating overlay, resizing refinements and Notes sync reliability."
+    "Merged upstream 2.0.4/2.0.5 features: Home screen widgets (Chats, Quick actions, One chat, Scripts), Shizuku & Root device access modes, OpenCode model variants and effort controls, Terminal sessions drawer with IME paste fixes, and floating switcher overview.",
+    "Preserved AntiGem Fork architecture: persistent WindowManager overlay with background touch pass-through, 8-way resizing & proportional aspect ratio lock, and Notes sync integrity."
   ],
-  "is_critical": false
+  "is_critical": false,
+  "beta": {
+    "version_code": 2050001,
+    "version_name": "F2.0.5-beta.1",
+    "changelog": [
+      "Page overview: view active pages as cards, tap to open, hold and drag to reorder",
+      "Terminal sessions drawer with gesture navigation support and enhanced paste handling",
+      "Floating switcher customization and keyboard avoidance in chat view"
+    ]
+  }
 }

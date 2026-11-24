@@ -38,6 +38,8 @@ object GlobalContext {
     )
 
     private const val MAX_REMEMBERED_CHATS = 600
+    /** Kept instead of a fingerprint for a chat whose first prompt was undone: its next message is a first message again. */
+    private const val RESTARTED = "restart"
 
     private var sp: SharedPreferences? = null
     private var filesDir: String = "/data/data/${BuildConfig.APPLICATION_ID}/files"
@@ -138,7 +140,7 @@ object GlobalContext {
                 append("- Android, in the AntiGem app's built-in Linux environment (Termux packages), as the app's own user. There is no sudo; /tmp, /usr and /etc are not usable.\n")
                 append("- Temporary files: use \$TMPDIR ($filesDir/usr/tmp), never /tmp. Install packages with `pkg install <name>`.\n")
                 append("- Home is \$HOME ($filesDir/home); phone storage is /sdcard.\n")
-                append("- Root: the phone may be rooted (`su` may exist). Never use `su` or any root access on your own; only when the user asks you to.\n\n")
+                append("- Root & phone access: the phone may be rooted (`su -c '…'`), connected to adb (`adb shell …`) or have Shizuku (`rish -c '…'`). Never use any of them on your own; only when the user asks you to.\n\n")
             }
             RunPlace.CHROOT -> {
                 val inst = ai.antigem.data.local.chroot.ChrootManager.activeInstallNow()
@@ -147,7 +149,7 @@ object GlobalContext {
                 append("- You run as user `$user` (home /home/$user). `sudo` (often without a password) gives root of the WHOLE PHONE, not only of Ubuntu.\n")
                 append("- Root: never use `sudo`, `su` or root on your own; only when the user asks you to. A task needs a package? Ask the user before running `sudo apt install <name>`.\n")
                 append("- Phone storage is /sdcard and USB drives are under /storage, when the user shared them into the chroot. Folders shared into the chroot are the phone's real folders: what you delete there is deleted on the phone.\n")
-                append("- Android's own tools (`termux-*`, `am`, `pm`) are not available here.\n\n")
+                append("- Android's own tools (`termux-*`, `am`, `pm`) are not available here. The phone may be reachable through adb (`adb shell …`), Shizuku (`rish -c '…'`) or its root (`android-su -c '…'`): use them only when the user asks you to.\n\n")
             }
             RunPlace.SERVER -> {
                 append("- On the user's own server (not the phone): the user reads and answers in the AntiGem app on their phone. Paths are paths on the server.\n")
@@ -209,14 +211,16 @@ object GlobalContext {
         val first = firstMessageBody()
         val fp = fingerprint()
         val known = chatId?.takeIf { it.isNotBlank() }?.let { id -> synchronized(sent) { sent[id] } }
-        val sendFirst = first != null && (!hasEarlierMessages || known != fp)
+        // a chat whose first prompt was undone starts over, even while its old messages may still be listed
+        val fresh = !hasEarlierMessages || known == RESTARTED
+        val sendFirst = first != null && (fresh || known != fp)
         val every = everyMessageBody()
         if (!sendFirst && every == null) return text to null
         val note = buildString {
             if (sendFirst) {
                 append(
                     when {
-                        !hasEarlierMessages -> "[AntiGem app context: from the app the user chats through, not written by the user. Follow it for this whole chat; it is not repeated.]"
+                        fresh -> "[AntiGem app context: from the app the user chats through, not written by the user. Follow it for this whole chat; it is not repeated.]"
                         known != null -> "[AntiGem app context, updated: it replaces the earlier copy in this chat. Follow it from now on.]"
                         else -> "[AntiGem app context: from the app the user chats through. Follow it from now on in this chat.]"
                     }
@@ -239,6 +243,12 @@ object GlobalContext {
             while (sent.size > MAX_REMEMBERED_CHATS) sent.remove(sent.keys.first())
         }
         persistSent()
+    }
+
+    /** The chat's first prompt was undone: it starts over, so its next message carries the context as a first message. */
+    fun restart(chatId: String?) {
+        if (chatId.isNullOrBlank()) return
+        markSent(chatId, RESTARTED)
     }
 
     /** The chat lost its first-message context (compacted, first message edited): send it again with the next message. */

@@ -88,6 +88,7 @@ enum class SettingsSection(val title: String, val subtitle: String) {
     MAIN("Settings & Preferences", "Configure your AntiGem experience"),
     THEMES("Themes", "Light and dark mode, and the theme gallery"),
     APPEARANCE("Appearance", "Chat text size, agent steps, message stats, header icons, the app switcher and Gemmy"),
+    HOME_SCREEN("Home screen", "Widgets, shortcuts to chats and pages, scripts, and the app icon's menu"),
     STEM_RENDERING("STEM & diagrams", "Chemistry, graphs, geometry, simulations, circuits and offline Mermaid in chats"),
     SERVERS("Where agents run", "This phone (AntiGem or Ubuntu chroot) or your server, and how the app reaches it"),
     CONNECT_PC("Connect to PC", "Use the agents on your PC (AntiGem in VS Code) from this phone"),
@@ -106,6 +107,7 @@ enum class SettingsSection(val title: String, val subtitle: String) {
     ANTIGRAVITY("Antigravity", "Account & CLI, MCP servers, skills & plugins, commands & permissions"),
     AGY_CLI("Account & CLI", "Google sign-in, agy version and install, on this device or the server"),
     AGY_CLOUD("Cloud agents", "Antigravity chats on a Google cloud machine (Remote Agents)"),
+    AGY_VOICE("Voice calls", "The Voice call tile and shortcut, and the floating call window"),
     CLAUDE("Claude Code", "Account, models, permissions, MCP, plugins & memory"),
     /** One Claude Code page (which one: the dialog's claudePage); not a page of its own for Jarvis. */
     CLAUDE_PAGE("Claude Code", "Account, models, permissions, MCP, plugins & memory"),
@@ -134,7 +136,7 @@ enum class SettingsSection(val title: String, val subtitle: String) {
     DIAGNOSTICS("Diagnostics & Performance", "Live network connections, active streams & thread HUD"),
     UTILITIES("Utilities", "Handy device tools"),
     GITHUB("GitHub", "Sign in with the GitHub CLI, your repositories and git credentials"),
-    ADB_CONNECT("ADB Connect", "Connect the terminal's adb to this phone over Wireless debugging"),
+    ADB_CONNECT("ADB Connect", "Shell access to this phone through adb (Wireless debugging), Shizuku or root"),
     ANDROID_AUTOMATION("Android Automation", "Let AI agents see and control this phone"),
     REA("REA · Reverse Engineering", "Let agents analyze APKs, Flutter, React Native and native code"),
     REA_GROUPS("REA Tool Groups", "Which REA tools each REA MCP server shows"),
@@ -142,6 +144,7 @@ enum class SettingsSection(val title: String, val subtitle: String) {
     TERMUX_SUPPORT("Termux Support", "Termux:API and the X11 desktop"),
     TERMUX_API("Termux:API", "How termux-api commands are handled"),
     X11_DESKTOP("X11 Desktop", "Linux desktop apps with Termux:X11"),
+    UPDATES("Updates", "Beta updates, and how often AntiGem checks for a new version"),
     CHANGELOG("What's new", "Every AntiGem version and what changed"),
     ABOUT("About & Info", "App version, package details, and bridge export");
 
@@ -162,7 +165,7 @@ enum class SettingsSection(val title: String, val subtitle: String) {
 
     /** Where Back goes from this section. */
     val parent: SettingsSection get() = when (this) {
-        AGY_CLI, AGY_CLOUD, MCP, SKILLS_PLUGINS, COMMANDS -> ANTIGRAVITY
+        AGY_CLI, AGY_CLOUD, AGY_VOICE, MCP, SKILLS_PLUGINS, COMMANDS -> ANTIGRAVITY
         CLAUDE_PAGE -> CLAUDE
         OPENCODE_PAGE -> OPENCODE
         CODEX_PAGE -> CODEX
@@ -275,6 +278,8 @@ fun SettingsDialog(
     floatingSwitcherItems: List<String> = listOf("chat", "ide", "terminal", "browser", "notes", "files"),
     floatingSwitcherAutoCollapseSec: Int = 0,
     onSetFloatingSwitcherOrientation: (String) -> Unit = {},
+    floatingSwitcherHandleIcon: String = "grid",
+    onSetFloatingSwitcherHandleIcon: (String) -> Unit = {},
     onSetFloatingSwitcherItems: (List<String>) -> Unit = {},
     onSetFloatingSwitcherAutoCollapseSec: (Int) -> Unit = {},
     onResetFloatingSwitcherPosition: () -> Unit = {},
@@ -286,6 +291,8 @@ fun SettingsDialog(
     defaultApprovalScope: String = "PERMISSION_SCOPE_ONCE",
     groupAgentSteps: Boolean = true,
     onToggleGroupAgentSteps: (Boolean) -> Unit = {},
+    groupStepsMin: Int = 2,
+    onSetGroupStepsMin: (Int) -> Unit = {},
     showMessageStats: Boolean = true,
     onToggleShowMessageStats: (Boolean) -> Unit = {},
     globalSecuritySettings: ai.antigem.data.remote.AgyHubClient.GlobalUserSettings? = null,
@@ -522,6 +529,8 @@ fun SettingsDialog(
                         cardBorder = cardBorder,
                         onSetChatFontScale = onSetChatFontScale,
                         onSetFloatingSwitcherOrientation = onSetFloatingSwitcherOrientation,
+                        floatingSwitcherHandleIcon = floatingSwitcherHandleIcon,
+                        onSetFloatingSwitcherHandleIcon = onSetFloatingSwitcherHandleIcon,
                         onSetFloatingSwitcherItems = onSetFloatingSwitcherItems,
                         onSetFloatingSwitcherAutoCollapseSec = onSetFloatingSwitcherAutoCollapseSec,
                         onResetFloatingSwitcherPosition = onResetFloatingSwitcherPosition,
@@ -529,6 +538,8 @@ fun SettingsDialog(
                         onSetChatHeaderItems = onSetChatHeaderItems,
                         groupAgentSteps = groupAgentSteps,
                         onToggleGroupAgentSteps = onToggleGroupAgentSteps,
+                        groupStepsMin = groupStepsMin,
+                        onSetGroupStepsMin = onSetGroupStepsMin,
                         showMessageStats = showMessageStats,
                         onToggleShowMessageStats = onToggleShowMessageStats
                     )
@@ -734,6 +745,16 @@ fun SettingsDialog(
                     ) {
                         ai.antigem.ui.cloud.AgyCloudSettingsCard()
                     }
+                    SettingsSection.AGY_VOICE -> Column(
+                        Modifier.fillMaxSize().bouncyVerticalScroll(rememberScrollState()).padding(16.dp)
+                    ) {
+                        ai.antigem.ui.voice.AgyVoiceCallSettingsCard()
+                    }
+                    SettingsSection.HOME_SCREEN -> Column(
+                        Modifier.fillMaxSize().bouncyVerticalScroll(rememberScrollState()).padding(16.dp)
+                    ) {
+                        ai.antigem.ui.homescreen.HomeScreenSettingsCard()
+                    }
                     SettingsSection.CLAUDE -> if (claude != null) {
                         ai.antigem.ui.claude.ClaudeSettingsGroup(claude, cardBg) { page ->
                             claudePage = page
@@ -831,6 +852,10 @@ fun SettingsDialog(
                         onOpenChangelog = { currentSection = SettingsSection.CHANGELOG }
                     )
                     SettingsSection.CHANGELOG -> ChangelogScreen(
+                        cardBg = cardBg,
+                        cardBorder = cardBorder
+                    )
+                    SettingsSection.UPDATES -> UpdateSettingsScreen(
                         cardBg = cardBg,
                         cardBorder = cardBorder
                     )
@@ -935,6 +960,7 @@ private fun MainSettingsMenu(
             listOf(
                 row(SettingsSection.THEMES, Icons.Outlined.Palette, c.accentPink, ai.antigem.theme.ThemeManager.current.name),
                 row(SettingsSection.APPEARANCE, Icons.Outlined.Tune, c.accentAlt),
+                row(SettingsSection.HOME_SCREEN, Icons.Outlined.Widgets, c.accentTeal),
                 stemRow,
                 // where agents run (Termux, Ubuntu chroot or a server), and whether the app reaches it
                 row(SettingsSection.SERVERS, Icons.Outlined.Dns, c.info,
@@ -1002,6 +1028,7 @@ private fun MainSettingsMenu(
                 row(SettingsSection.DATA_PROTECTION, Icons.Outlined.Security, c.success)
             ),
             listOf(
+                row(SettingsSection.UPDATES, Icons.Outlined.SystemUpdateAlt, c.info),
                 row(SettingsSection.ABOUT, Icons.Outlined.Info, c.accentAlt, "v${BuildConfig.VERSION_NAME}")
             )
         )
@@ -1039,13 +1066,16 @@ private fun AntigravitySettingsMenu(
         else -> "Not installed" to c.warning
     }
     val cloudOn by ai.antigem.data.agent.agy.AgyCloud.enabled.collectAsState()
+    val voiceBubbleOn by ai.antigem.data.voice.AgyVoicePreferences.bubble.collectAsState()
     SettingsRowList(
         cardBg = cardBg,
         groups = listOf(
             listOf(
                 SettingsRowItem(Icons.Outlined.Terminal, GeminiBlue, SettingsSection.AGY_CLI.title, cliValue, cliColor) { onNavigate(SettingsSection.AGY_CLI) },
                 SettingsRowItem(Icons.Outlined.Cloud, GeminiBlue, SettingsSection.AGY_CLOUD.title,
-                    if (cloudOn) "On" else "Off", if (cloudOn) QuotaGreen else null) { onNavigate(SettingsSection.AGY_CLOUD) }
+                    if (cloudOn) "On" else "Off", if (cloudOn) QuotaGreen else null) { onNavigate(SettingsSection.AGY_CLOUD) },
+                SettingsRowItem(Icons.Outlined.HeadsetMic, GeminiBlue, SettingsSection.AGY_VOICE.title,
+                    if (voiceBubbleOn) "Floating on" else null, if (voiceBubbleOn) QuotaGreen else null) { onNavigate(SettingsSection.AGY_VOICE) }
             ),
             listOf(
                 SettingsRowItem(Icons.Outlined.Hub, GeminiBlue, SettingsSection.MCP.title, mcpValue, mcpColor) { onNavigate(SettingsSection.MCP) },
@@ -1194,10 +1224,15 @@ private fun rememberDeviceToolRows(onNavigate: (SettingsSection) -> Unit): Devic
     val context = LocalContext.current
     LaunchedEffect(Unit) {
         ai.antigem.data.adb.AdbConnectManager.init(context)
+        ai.antigem.data.adb.DeviceAccess.init(context)
         ai.antigem.data.adb.AdbConnectManager.refresh()
+        ai.antigem.data.adb.ShizukuShell.refresh()
     }
     val adb by ai.antigem.data.adb.AdbConnectManager.state.collectAsState()
     val connected = adb.connectedDevice
+    val accessMode by ai.antigem.data.adb.DeviceAccess.mode.collectAsState()
+    val shizuku by ai.antigem.data.adb.ShizukuShell.status.collectAsState()
+    val root by ai.antigem.data.adb.RootShell.state.collectAsState()
     var automationAllowed by remember { mutableStateOf(ai.antigem.data.automation.AndroidAutomation.isServiceRunning()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -1209,12 +1244,23 @@ private fun rememberDeviceToolRows(onNavigate: (SettingsSection) -> Unit): Devic
     return DeviceToolRows(
         adb = SettingsRowItem(
             Icons.Outlined.PhonelinkSetup, c.accentTeal, SettingsSection.ADB_CONNECT.title,
-            when {
-                connected != null -> "Connected"
-                adb.adbInstalled == false -> "Not installed"
-                else -> null
+            when (accessMode) {
+                ai.antigem.data.adb.DeviceAccess.Mode.ADB -> when {
+                    connected != null -> "Connected"
+                    adb.adbInstalled == false -> "Not installed"
+                    else -> null
+                }
+                ai.antigem.data.adb.DeviceAccess.Mode.SHIZUKU -> if (shizuku.ready) "Shizuku" else "Shizuku · not ready"
+                ai.antigem.data.adb.DeviceAccess.Mode.ROOT ->
+                    if (root.check == ai.antigem.data.adb.RootShell.Check.GRANTED) "Root" else "Root · not granted"
             },
-            if (connected != null) QuotaGreen else if (adb.adbInstalled == false) c.warning else null
+            when (accessMode) {
+                ai.antigem.data.adb.DeviceAccess.Mode.ADB ->
+                    if (connected != null) QuotaGreen else if (adb.adbInstalled == false) c.warning else null
+                ai.antigem.data.adb.DeviceAccess.Mode.SHIZUKU -> if (shizuku.ready) QuotaGreen else c.warning
+                ai.antigem.data.adb.DeviceAccess.Mode.ROOT ->
+                    if (root.check == ai.antigem.data.adb.RootShell.Check.GRANTED) QuotaGreen else c.warning
+            }
         ) { onNavigate(SettingsSection.ADB_CONNECT) },
         automation = SettingsRowItem(
             Icons.Outlined.TouchApp, c.accentAlt, SettingsSection.ANDROID_AUTOMATION.title,
@@ -1501,6 +1547,8 @@ private fun AppearanceSubScreen(
     cardBorder: BorderStroke,
     onSetChatFontScale: (Float) -> Unit,
     onSetFloatingSwitcherOrientation: (String) -> Unit,
+    floatingSwitcherHandleIcon: String,
+    onSetFloatingSwitcherHandleIcon: (String) -> Unit,
     onSetFloatingSwitcherItems: (List<String>) -> Unit,
     onSetFloatingSwitcherAutoCollapseSec: (Int) -> Unit,
     onResetFloatingSwitcherPosition: () -> Unit,
@@ -1508,6 +1556,8 @@ private fun AppearanceSubScreen(
     onSetChatHeaderItems: (List<String>) -> Unit,
     groupAgentSteps: Boolean,
     onToggleGroupAgentSteps: (Boolean) -> Unit,
+    groupStepsMin: Int,
+    onSetGroupStepsMin: (Int) -> Unit,
     showMessageStats: Boolean,
     onToggleShowMessageStats: (Boolean) -> Unit
 ) {
@@ -1678,35 +1728,74 @@ private fun AppearanceSubScreen(
             border = cardBorder,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                    Text(
-                        text = "Group Agent Steps",
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(
+                            text = "Group Agent Steps",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Runs of thinking and tool calls in a row fold into one pill that shows the progress; tap it to see the steps. Off: every step is its own tile.",
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(
+                        checked = groupAgentSteps,
+                        onCheckedChange = onToggleGroupAgentSteps,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = ClaudeTerracotta
+                        )
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                }
+                // Fold after: how many steps in a row fold into a pill (1+ = every run, even a single step)
+                if (groupAgentSteps) {
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Runs of thinking and tool calls (${ai.antigem.ui.chat.StepGroups.MIN_TOOLS}+ tool calls or ${ai.antigem.ui.chat.StepGroups.MIN_STEPS}+ steps) fold into one pill that shows the progress; tap it to see the steps. Off: every step is its own tile.",
+                        text = "Fold after (steps in a row)",
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        (1..6).forEach { n ->
+                            val isSelected = groupStepsMin == n
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onSetGroupStepsMin(n) },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, if (isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "$n+",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
-                Switch(
-                    checked = groupAgentSteps,
-                    onCheckedChange = onToggleGroupAgentSteps,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = ClaudeTerracotta
-                    )
-                )
             }
         }
 
@@ -1784,108 +1873,177 @@ private fun AppearanceSubScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Layout Orientation Selector
-                Text(
-                    text = "Layout Orientation",
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val isVert = floatingSwitcherOrientation.equals("VERTICAL", ignoreCase = true)
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onSetFloatingSwitcherOrientation("VERTICAL") },
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (isVert) ClaudeTerracotta.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, if (isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(Icons.Outlined.ExpandLess, contentDescription = null, tint = if (isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Vertical", fontSize = 12.sp, fontWeight = if (isVert) FontWeight.Bold else FontWeight.Normal, color = if (isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onSetFloatingSwitcherOrientation("HORIZONTAL") },
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (!isVert) ClaudeTerracotta.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, if (!isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = if (!isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Horizontal", fontSize = 12.sp, fontWeight = if (!isVert) FontWeight.Bold else FontWeight.Normal, color = if (!isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                }
+                // The page overview (on/off, which pill opens it, its layout) and the pills' size
+                SwitcherOverviewOptions(handleIcon = floatingSwitcherHandleIcon)
+                // The icon panel's own options only while the switcher pill has one (not when its tap opens the overview)
+                val iconPanelInUse = rememberPageOverviewMode() != "SWITCHER"
 
                 Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Auto-Collapse Timeout Selector
+                if (iconPanelInUse) {
+                    // Layout Orientation Selector
+                    Text(
+                        text = "Layout Orientation",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val isVert = floatingSwitcherOrientation.equals("VERTICAL", ignoreCase = true)
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onSetFloatingSwitcherOrientation("VERTICAL") },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isVert) ClaudeTerracotta.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, if (isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Outlined.ExpandLess, contentDescription = null, tint = if (isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Vertical", fontSize = 12.sp, fontWeight = if (isVert) FontWeight.Bold else FontWeight.Normal, color = if (isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onSetFloatingSwitcherOrientation("HORIZONTAL") },
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (!isVert) ClaudeTerracotta.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, if (!isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = if (!isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Horizontal", fontSize = 12.sp, fontWeight = if (!isVert) FontWeight.Bold else FontWeight.Normal, color = if (!isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+
+                // Collapsed Pill Icon Selector
                 Text(
-                    text = "Auto-Collapse Timeout",
+                    text = "Collapsed Icon",
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Automatically collapses into a small arrow handle after inactivity",
+                    text = "The icon on the small handle when the switcher is collapsed",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                val timeouts = listOf(0 to "Never", 3 to "3s", 5 to "5s", 10 to "10s", 15 to "15s")
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    timeouts.forEach { (sec, label) ->
-                        val isSelected = floatingSwitcherAutoCollapseSec == sec
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onSetFloatingSwitcherAutoCollapseSec(sec) },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, if (isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(vertical = 6.dp),
-                                contentAlignment = Alignment.Center
+                val handleIcons = ai.antigem.ui.components.FloatingSwitcherHandleIcons
+                // an unknown saved id shows the default icon, so mark that one
+                val selectedHandleIcon = handleIcons.firstOrNull { it.first == floatingSwitcherHandleIcon }?.first
+                    ?: handleIcons.first().first
+                handleIcons.chunked(4).forEach { rowIcons ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowIcons.forEach { (iconId, icon) ->
+                            val isSelected = iconId == selectedHandleIcon
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onSetFloatingSwitcherHandleIcon(iconId) },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) ClaudeTerracotta.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, if (isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                             ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = iconId.replaceFirstChar { it.uppercase() },
+                                        tint = if (isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
+
+                if (iconPanelInUse) {
+                    // Auto-Collapse Timeout Selector
+                    Text(
+                        text = "Auto-Collapse Timeout",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Automatically collapses into a small handle after inactivity",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val timeouts = listOf(0 to "Never", 3 to "3s", 5 to "5s", 10 to "10s", 15 to "15s")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        timeouts.forEach { (sec, label) ->
+                            val isSelected = floatingSwitcherAutoCollapseSec == sec
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onSetFloatingSwitcherAutoCollapseSec(sec) },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, if (isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
 
                 // Customize Items Order & Visibility
                 Text(
@@ -3972,6 +4130,13 @@ private fun TerminalSubScreen(
     var cursorStyleState by remember { mutableStateOf(terminalCursorStyle) }
     var bufferSizeState by remember { mutableIntStateOf(terminalBufferSize) }
     var themeState by remember { mutableStateOf(terminalTheme) }
+    val terminalPrefs = remember(context) { ai.antigem.data.preferences.AuthPreferences(context) }
+    val sessionPillEnabled by terminalPrefs.terminalSessionPillEnabled
+        .collectAsState(initial = terminalPrefs.getTerminalSessionPillEnabledSync())
+    val drawerSwipeArea by terminalPrefs.terminalDrawerSwipeArea
+        .collectAsState(initial = terminalPrefs.getTerminalDrawerSwipeAreaSync())
+    val charBasedInput by terminalPrefs.terminalCharBasedInput
+        .collectAsState(initial = terminalPrefs.getTerminalCharBasedInputSync())
 
 
     Column(
@@ -4281,6 +4446,89 @@ private fun TerminalSubScreen(
                             }
                         }
                     }
+                }
+
+                // Floating session pill on/off
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text("Floating Session Pill", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "The session name at the top right of the terminal, to switch and close sessions. Off: a plain terminal like Termux; swipe right from the left edge for the sessions drawer.",
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(
+                        checked = sessionPillEnabled,
+                        onCheckedChange = { enabled -> coroutineScope.launch { terminalPrefs.saveTerminalSessionPillEnabled(enabled) } },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = ClaudeTerracotta
+                        )
+                    )
+                }
+
+                // Where on the left edge the drawer swipe beats gesture navigation's Back
+                Column {
+                    Text("Drawer Swipe Area", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "With gesture navigation, a swipe from the left edge is Back. Android lets an app keep only part of the edge (200dp) for itself: in that part, marked by a small line on the edge, the swipe always opens the sessions drawer.",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("TOP" to "Top", "MIDDLE" to "Middle", "BOTTOM" to "Bottom").forEach { (area, label) ->
+                            val isSel = drawerSwipeArea.equals(area, ignoreCase = true)
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { coroutineScope.launch { terminalPrefs.saveTerminalDrawerSwipeArea(area) } },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSel) ClaudeTerracotta else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, if (isSel) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                            ) {
+                                Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                    Text(text = label, fontSize = 11.5.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium, color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Keyboard input mode: text mode (keyboard toolbar + clipboard) or key presses only (TYPE_NULL)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text("Character-Based Input", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "For keyboards that misbehave in the terminal (letters doubled or lost, autocorrect). On: the keyboard sends single key presses only, like Termux; its toolbar and clipboard are hidden, so paste with a long press. Off: the keyboard's clipboard works.",
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(
+                        checked = charBasedInput,
+                        onCheckedChange = { enabled -> coroutineScope.launch { terminalPrefs.saveTerminalCharBasedInput(enabled) } },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = ClaudeTerracotta
+                        )
+                    )
                 }
             }
         }
@@ -9052,6 +9300,54 @@ private fun AboutSubScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://discord.gg/pJvvTDTc6G"))
+                            context.startActivity(intent)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Forum,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Discord Community",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Get help, share builds & ideas",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/pranay-shah-live/antigem-fork"))
                             context.startActivity(intent)
                         }
@@ -9079,7 +9375,7 @@ private fun AboutSubScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "github.com/pranay-shah-live/antigem-fork",
+                                    text = "github.com/santoshkurmi/antigem",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
