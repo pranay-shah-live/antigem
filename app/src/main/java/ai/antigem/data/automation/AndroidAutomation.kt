@@ -51,13 +51,15 @@ object AndroidAutomation {
 
     const val INSTRUCTIONS = "Controls this Android phone and personal-assistant actions. " +
         "PREFER 1-shot assistant/API tools first instead of shell (`run_command`, `rish`, `android_adb_shell`) or UI-tapping loops: " +
+        "NEVER run `adb shell` via `run_command` — use `android_*` MCP tools directly. " +
         "use android_get_schedule for calendar events, android_play_media for music/playback, android_call_contact + android_call_control for calls, " +
         "android_set_alarm / android_set_timer for alarms and timers, android_open_camera for camera, " +
-        "android_get_notifications / android_reply_notification for WhatsApp/Gmail/app notifications, " +
+        "android_get_notifications / android_reply_notification for WhatsApp/Gmail/app notifications (batch-triage 5+ items with `jev_batch` / `jev_ask`), " +
         "android_launch_app / android_open_intent / android_list_apps for apps and deep links, and android_get_device_info / android_get_status for phone state. " +
         "All of these non-UI tools work even when the Accessibility service is off. " +
-        "Only when no 1-shot tool covers the task: look at the screen with android_get_ui_tree (or android_screenshot) and act with android_tap / android_type_text / android_scroll " +
-        "(ids are only valid for the latest tree), or use android_adb_shell (runs via ADB, Shizuku or root). " +
+        "Only when no 1-shot tool covers the task: prefer `android_get_ui_tree(format='compact')` + `android_tap(element_id)` / `android_type_text` / `android_scroll` " +
+        "over `android_screenshot` + raw coordinates (ids are only valid for the latest tree; use screenshots only for unlabelled canvases/WebViews). " +
+        "VERIFICATION: NEVER mark a UI action (Play, Update, Send) complete without verifying the resulting state on screen or via audio/status. " +
         "SAFETY: For android_call_contact, ALWAYS look up the contact first (confirm=false) and confirm the recipient with the user before calling with confirm=true. " +
         "Ask the user before anything destructive or outward-facing: replying to notifications (android_reply_notification), uninstalling, deleting, sending messages, payments, changing security settings. " +
         "If a tool reports a missing permission, Notification access, Accessibility service, or shell access, tell the user exactly what to grant and stop."
@@ -778,12 +780,14 @@ object AndroidAutomation {
 
     private fun launchApp(context: Context, args: JSONObject): JSONObject {
         val name = args.optString("name").trim()
-        val pkg = args.optString("package").trim().ifBlank {
-            if (name.isBlank()) return error("Give package or name.")
-            val apps = launchableApps(context)
-            (apps.firstOrNull { it.first.equals(name, true) } ?: apps.firstOrNull { it.first.contains(name, true) })?.second
-                ?: return error("No app called \"$name\". Use android_list_apps to see what's installed.")
-        }
+        val pkg = args.optString("package").trim()
+            .ifBlank { args.optString("package_name").trim() }
+            .ifBlank {
+                if (name.isBlank()) return error("Give package or name.")
+                val apps = launchableApps(context)
+                (apps.firstOrNull { it.first.equals(name, true) } ?: apps.firstOrNull { it.first.contains(name, true) })?.second
+                    ?: return error("No app called \"$name\". Use android_list_apps to see what's installed.")
+            }
         val intent = context.packageManager.getLaunchIntentForPackage(pkg)
             ?: return error("$pkg isn't installed or can't be opened.")
         startActivityBestEffort(context, intent)
@@ -792,8 +796,8 @@ object AndroidAutomation {
 
     private fun openIntent(context: Context, args: JSONObject): JSONObject {
         val intent = Intent(args.optString("action").ifBlank { Intent.ACTION_VIEW })
-        args.optString("uri").ifBlank { null }?.let { intent.data = Uri.parse(it) }
-        args.optString("package").ifBlank { null }?.let { intent.setPackage(it) }
+        args.optString("uri").ifBlank { args.optString("url") }.ifBlank { null }?.let { intent.data = Uri.parse(it) }
+        args.optString("package").ifBlank { args.optString("package_name") }.ifBlank { null }?.let { intent.setPackage(it) }
         if (intent.action == Intent.ACTION_VIEW && intent.data == null) return error("ACTION_VIEW needs a uri.")
         return try {
             startActivityBestEffort(context, intent)
@@ -968,7 +972,32 @@ object AndroidAutomation {
         }.toString(2))
     }
 
-    private fun playMedia(context: Context, args: JSONObject): JSONObject {
+    private suspend fun resolveYouTubeVideoId(query: String): String? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val url = java.net.URL("https://www.youtube.com/results?search_query=${Uri.encode(query)}")
+                val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 3000
+                    readTimeout = 3000
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
+                }
+                val html = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                Regex(""""videoId":"([a-zA-Z0-9_-]{11})"""").find(html)?.groupValues?.getOrNull(1)
+            }.getOrNull()
+        }
+
+    private suspend fun awaitPlaybackActive(context: Context, timeoutMs: Long = 1800L): Boolean {
+        val am = context.getSystemService(AudioManager::class.java)
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) {
+            if (am.isMusicActive) return true
+            delay(300)
+        }
+        return am.isMusicActive
+    }
+
+    private suspend fun playMedia(context: Context, args: JSONObject): JSONObject {
         val query = args.optString("query").trim()
         val rawAction = args.optString("action").trim().lowercase()
         val action = rawAction.ifBlank { if (query.isNotEmpty()) "search_play" else "toggle" }
@@ -977,7 +1006,7 @@ object AndroidAutomation {
             if (query.isEmpty()) return error("search_play requires a non-empty query.")
             val pm = context.packageManager
             val preferred = listOfNotNull(
-                args.optString("package").trim().ifBlank { null },
+                args.optString("package").trim().ifBlank { args.optString("package_name").trim() }.ifBlank { null },
                 "app.morphe.android.apps.youtube.music",
                 "com.google.android.apps.youtube.music",
                 "com.spotify.music"
@@ -986,6 +1015,22 @@ object AndroidAutomation {
                 runCatching { pm.getPackageInfo(pkg, 0) }.isSuccess
             }
             if (installedTarget != null) {
+                if (installedTarget.contains("youtube.music")) {
+                    val videoId = resolveYouTubeVideoId(query)
+                    if (videoId != null) {
+                        val watchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/watch?v=$videoId"))
+                            .setPackage(installedTarget)
+                        if (pm.resolveActivity(watchIntent, 0) != null) {
+                            startActivityBestEffort(context, watchIntent)
+                            val active = awaitPlaybackActive(context)
+                            return if (active) {
+                                text("Playing \"$query\" ($videoId) in $installedTarget (verified audio active).")
+                            } else {
+                                text("Opened \"$query\" ($videoId) in $installedTarget, but audio playback did not auto-start. Use android_get_ui_tree to tap Play if needed.")
+                            }
+                        }
+                    }
+                }
                 val playIntent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
                     putExtra(SearchManager.QUERY, query)
                     putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
@@ -993,7 +1038,12 @@ object AndroidAutomation {
                 }
                 if (pm.resolveActivity(playIntent, 0) != null) {
                     startActivityBestEffort(context, playIntent)
-                    return text("Playing \"$query\" in $installedTarget.")
+                    val active = awaitPlaybackActive(context)
+                    return if (active) {
+                        text("Playing \"$query\" in $installedTarget (verified audio active).")
+                    } else {
+                        text("Opened $installedTarget for \"$query\", but audio playback did not auto-start. Use android_get_ui_tree to search and tap Play.")
+                    }
                 }
                 val fallbackUri = when {
                     installedTarget.contains("youtube.music") ->
@@ -1006,7 +1056,7 @@ object AndroidAutomation {
                     val uriIntent = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUri)).setPackage(installedTarget)
                     if (pm.resolveActivity(uriIntent, 0) != null) {
                         startActivityBestEffort(context, uriIntent)
-                        return text("Opened search for \"$query\" in $installedTarget.")
+                        return text("Opened search for \"$query\" in $installedTarget (tap a track to play).")
                     }
                 }
             }
@@ -1016,7 +1066,9 @@ object AndroidAutomation {
             }
             return try {
                 startActivityBestEffort(context, generic)
-                text("Dispatched media search for \"$query\".")
+                val active = awaitPlaybackActive(context)
+                if (active) text("Playing \"$query\" (verified audio active).")
+                else text("Dispatched media search for \"$query\", but audio playback did not auto-start.")
             } catch (_: android.content.ActivityNotFoundException) {
                 error("No media app found to handle \"$query\".")
             }
