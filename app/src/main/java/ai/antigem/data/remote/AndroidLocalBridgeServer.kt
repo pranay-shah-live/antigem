@@ -150,9 +150,10 @@ class AndroidLocalBridgeServer private constructor() {
 
                 val entry = existing ?: JSONObject()
                 entry.put("serverUrl", jevUrl)
-                if (cachedDeviceId.isNotBlank()) {
+                val serverKey = LocalServerAuth.key(context)
+                if (serverKey.isNotBlank()) {
                     val headersObj = entry.optJSONObject("headers") ?: JSONObject()
-                    headersObj.put("X-Device-Id", cachedDeviceId)
+                    headersObj.put("X-Device-Id", serverKey)
                     entry.put("headers", headersObj)
                 }
                 servers.put(JEV_MCP_NAME, entry)
