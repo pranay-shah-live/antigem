@@ -26,6 +26,10 @@
     <!-- mini app reminders and exact-time background tasks (Android 14+ makes alarms inexact without it) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- ADB Connect: turns Wireless debugging back on by itself. Only the shell user can grant it (pm grant through adb,
          Shizuku or root); nothing else uses it -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
@@ -294,6 +298,17 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/automation_accessibility_service" />
+        </service>
+
+        <!-- Android Automation (android_automation_mcp): reading and replying to notifications -->
+        <service
+            android:name="ai.antigem.data.automation.AutomationNotificationListenerService"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
         </service>
 
         <!-- Jarvis hands-free mode: keeps the microphone available while it listens for the wake phrase -->

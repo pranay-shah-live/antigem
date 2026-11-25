@@ -1,29 +1,45 @@
 package ai.antigem.data.automation
 
+import android.Manifest
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
+import android.app.SearchManager
 import android.content.ComponentName
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Path
 import android.graphics.Rect
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.provider.AlarmClock
+import android.provider.CalendarContract
+import android.provider.ContactsContract
+import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Base64
 import android.util.DisplayMetrics
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
+import androidx.core.content.ContextCompat
 import ai.antigem.data.adb.DeviceAccess
 import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -33,15 +49,18 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object AndroidAutomation {
 
-    const val INSTRUCTIONS = "Controls this Android phone. Look first: android_get_ui_tree lists on-screen elements with ids like e12 and their centers; " +
-        "android_screenshot shows what it looks like. Then act on element ids (android_tap, android_type_text, android_scroll), or on screen-pixel " +
-        "coordinates when an element has no id. Ids are only valid for the latest tree, so read it again after the screen changes. " +
-        "For anything the tools don't cover, use android_adb_shell: it runs through the access the user picked in AntiGem " +
-        "(ADB, Shizuku or root). In the terminal: `adb shell …` (ADB), `rish -c '…'` (Shizuku, as the shell user), `su -c '…'` " +
-        "(root; in the Ubuntu chroot `android-su -c '…'`, since the chroot's own su is Ubuntu's). When the user says use adb, " +
-        "Shizuku or su, use that one. Ask the user before anything destructive or " +
-        "outward-facing: uninstalling, deleting, sending messages, payments, changing security settings. " +
-        "If a tool says a permission, ADB, Shizuku or root is missing, tell the user exactly what to do and stop."
+    const val INSTRUCTIONS = "Controls this Android phone and personal-assistant actions. " +
+        "PREFER 1-shot assistant/API tools first instead of shell (`run_command`, `rish`, `android_adb_shell`) or UI-tapping loops: " +
+        "use android_get_schedule for calendar events, android_play_media for music/playback, android_call_contact + android_call_control for calls, " +
+        "android_set_alarm / android_set_timer for alarms and timers, android_open_camera for camera, " +
+        "android_get_notifications / android_reply_notification for WhatsApp/Gmail/app notifications, " +
+        "android_launch_app / android_open_intent / android_list_apps for apps and deep links, and android_get_device_info / android_get_status for phone state. " +
+        "All of these non-UI tools work even when the Accessibility service is off. " +
+        "Only when no 1-shot tool covers the task: look at the screen with android_get_ui_tree (or android_screenshot) and act with android_tap / android_type_text / android_scroll " +
+        "(ids are only valid for the latest tree), or use android_adb_shell (runs via ADB, Shizuku or root). " +
+        "SAFETY: For android_call_contact, ALWAYS look up the contact first (confirm=false) and confirm the recipient with the user before calling with confirm=true. " +
+        "Ask the user before anything destructive or outward-facing: replying to notifications (android_reply_notification), uninstalling, deleting, sending messages, payments, changing security settings. " +
+        "If a tool reports a missing permission, Notification access, Accessibility service, or shell access, tell the user exactly what to grant and stop."
 
     /** Elements of the latest android_get_ui_tree, by id. */
     private val elements = ConcurrentHashMap<String, AccessibilityNodeInfo>()
@@ -201,6 +220,72 @@ object AndroidAutomation {
             "command" to prop("string", "Shell command"),
             "timeout_seconds" to prop("integer", "Default 30, max 300")
         ))
+        put(tool("android_get_schedule",
+            "Read upcoming synced Android calendar events from CalendarContract.Instances (defaults to VISIBLE=1 calendars from today through days_ahead). No Accessibility needed.",
+            emptyList(),
+            "days_ahead" to prop("integer", "Number of days ahead from today to include (default 7, max 90)"),
+            "include_hidden" to prop("boolean", "Include hidden/unsynced-visibility calendars (default false)"),
+            "calendar_name" to prop("string", "Filter by calendar_displayName (case-insensitive substring)"),
+            "query" to prop("string", "Filter by event title, location, or description (case-insensitive substring)"),
+            "limit" to prop("integer", "Maximum events to return (default 50, max 200)")
+        ))
+        put(tool("android_play_media",
+            "Control media playback (play, pause, toggle, next, previous, stop) via AudioManager media keys, or search and play a song/artist in YouTube Music or Spotify.",
+            emptyList(),
+            "action" to prop("string", "Playback action (default toggle if no query, or search_play if query is given)",
+                listOf("toggle", "play_pause", "play", "pause", "next", "previous", "stop", "search_play")),
+            "query" to prop("string", "Song, artist, album, or playlist to search and play"),
+            "package" to prop("string", "Optional target music package (defaults to YouTube Music Morphe, YouTube Music, or Spotify)")
+        ))
+        put(tool("android_call_contact",
+            "Look up a contact in ContactsContract and place a phone call. SAFETY: When confirm is false/omitted, ONLY returns matching contacts/numbers and asks for confirmation; pass confirm=true ONLY after the user confirms.",
+            listOf("query"),
+            "query" to prop("string", "Contact name or phone number to look up / call"),
+            "number" to prop("string", "Exact phone number to call when confirming a specific number from multiple matches"),
+            "confirm" to prop("boolean", "Must be true to actually place the call via ACTION_CALL; false/omitted only looks up and confirms")
+        ))
+        put(tool("android_call_control",
+            "Toggle speakerphone or microphone mute during a call using AudioManager.",
+            emptyList(),
+            "speakerphone" to prop("boolean", "true to enable speakerphone, false to disable"),
+            "mute" to prop("boolean", "true to mute microphone, false to unmute")
+        ))
+        put(tool("android_set_alarm",
+            "Set an alarm using Android AlarmClock.ACTION_SET_ALARM (with EXTRA_SKIP_UI=true by default).",
+            listOf("hour", "minute"),
+            "hour" to prop("integer", "Hour in 24-hour format (0-23)"),
+            "minute" to prop("integer", "Minute (0-59)"),
+            "message" to prop("string", "Optional alarm label"),
+            "days" to prop("string", "Optional repeat days, comma-separated e.g. 'mon,tue,wed' or '2,3,4' (1=Sun..7=Sat)"),
+            "vibrate" to prop("boolean", "Whether alarm should vibrate"),
+            "skip_ui" to prop("boolean", "Skip opening the Clock UI (default true)")
+        ))
+        put(tool("android_set_timer",
+            "Start a countdown timer using Android AlarmClock.ACTION_SET_TIMER (with EXTRA_SKIP_UI=true by default).",
+            listOf("seconds"),
+            "seconds" to prop("integer", "Timer duration in seconds (>= 1)"),
+            "message" to prop("string", "Optional timer label"),
+            "skip_ui" to prop("boolean", "Skip opening the Clock UI (default true)")
+        ))
+        put(tool("android_open_camera",
+            "Open the camera app directly in photo or video mode.",
+            emptyList(),
+            "mode" to prop("string", "Camera mode: photo (default) or video", listOf("photo", "video"))
+        ))
+        put(tool("android_get_notifications",
+            "Read active notifications (WhatsApp, Gmail, SMS, etc.) via AntiGem's NotificationListenerService, including message threads and reply keys.",
+            emptyList(),
+            "package" to prop("string", "Filter by package name substring, e.g. whatsapp or gm"),
+            "query" to prop("string", "Filter by app name, title, sender, or message text"),
+            "include_ongoing" to prop("boolean", "Include ongoing/persistent notifications (default false)"),
+            "limit" to prop("integer", "Maximum notifications to return (default 30, max 100)")
+        ))
+        put(tool("android_reply_notification",
+            "Send an inline reply to an active notification (e.g. WhatsApp/SMS/messaging) using its key from android_get_notifications. Always ask the user before sending.",
+            listOf("key", "message"),
+            "key" to prop("string", "Notification key from android_get_notifications"),
+            "message" to prop("string", "Reply text to send")
+        ))
     }
 
     // ---------------- results ----------------
@@ -212,37 +297,37 @@ object AndroidAutomation {
     // ---------------- calls ----------------
 
     suspend fun call(context: Context, name: String, args: JSONObject): JSONObject {
-        notReadyMessage(context)?.let { return error(it) }
-        val svc = AutomationAccessibilityService.instance ?: return error(notReadyMessage(context) ?: "Accessibility service not running")
         return runCatching {
             when (name) {
-                "android_get_status" -> status(context, svc)
+                "android_get_status" -> status(context)
                 "android_get_device_info" -> text(deviceInfo(context, args.optString("sections")).toString(2))
-                "android_get_ui_tree" -> text(uiTree(svc, args.optString("filter").ifBlank { null }, args.optBoolean("all_windows"), args.optInt("max_elements", 300).coerceIn(10, 2000)))
-                "android_screenshot" -> screenshot(context, svc, args.optInt("max_width", 1080).coerceIn(200, 4000), args.optInt("quality", 70).coerceIn(10, 100))
-                "android_tap" -> tap(svc, args)
-                "android_type_text" -> typeText(svc, args)
-                "android_scroll" -> scroll(context, svc, args)
-                "android_swipe" -> {
+                "android_get_ui_tree" -> withAccessibility(context) { svc ->
+                    text(uiTree(svc, args.optString("filter").ifBlank { null }, args.optBoolean("all_windows"), args.optInt("max_elements", 300).coerceIn(10, 2000)))
+                }
+                "android_screenshot" -> screenshot(context, args.optInt("max_width", 1080).coerceIn(200, 4000), args.optInt("quality", 70).coerceIn(10, 100))
+                "android_tap" -> withAccessibility(context) { svc -> tap(svc, args) }
+                "android_type_text" -> withAccessibility(context) { svc -> typeText(svc, args) }
+                "android_scroll" -> withAccessibility(context) { svc -> scroll(context, svc, args) }
+                "android_swipe" -> withAccessibility(context) { svc ->
                     val path = Path().apply {
                         moveTo(args.getDouble("x1").toFloat(), args.getDouble("y1").toFloat())
                         lineTo(args.getDouble("x2").toFloat(), args.getDouble("y2").toFloat())
                     }
-                    if (!svc.gesture(path, args.optLong("duration_ms", 300))) return error("The swipe was cancelled (the screen may be off or locked).")
+                    if (!svc.gesture(path, args.optLong("duration_ms", 300))) return@withAccessibility error("The swipe was cancelled (the screen may be off or locked).")
                     svc.awaitIdle()
                     text("Swiped. ${foreground(svc)}")
                 }
-                "android_global_action" -> globalAction(svc, args.getString("action"))
+                "android_global_action" -> withAccessibility(context) { svc -> globalAction(svc, args.getString("action")) }
                 "android_list_apps" -> listApps(context, args.optString("filter"))
-                "android_launch_app" -> launchApp(context, svc, args)
-                "android_open_intent" -> openIntent(svc, args)
-                "android_wait_for" -> waitFor(svc, args)
-                "android_press_key" -> pressKey(svc, args.getString("key"))
+                "android_launch_app" -> launchApp(context, args)
+                "android_open_intent" -> openIntent(context, args)
+                "android_wait_for" -> withAccessibility(context) { svc -> waitFor(svc, args) }
+                "android_press_key" -> pressKey(context, args.getString("key"))
                 "android_install_apk" -> withShell {
                     val out = DeviceAccess.installApk(args.getString("path")).output.trim()
                     if (out.contains("Success")) text("Installed.\n$out") else error(out.ifBlank { "install failed" })
                 }
-                "android_uninstall_app" -> uninstall(context, svc, args)
+                "android_uninstall_app" -> uninstall(context, args)
                 "android_force_stop_app" -> withShell {
                     val pkg = packageArg(args)
                     DeviceAccess.shell("am force-stop $pkg")
@@ -254,9 +339,25 @@ object AndroidAutomation {
                     val out = result.output.ifBlank { "(no output)" }.let { if (it.length > 60_000) it.take(60_000) + "\n…(truncated)" else it }
                     if (result.exitCode == 0) text(out) else error("Exit code ${result.exitCode}\n$out")
                 }
+                "android_get_schedule" -> getSchedule(context, args)
+                "android_play_media" -> playMedia(context, args)
+                "android_call_contact" -> callContact(context, args)
+                "android_call_control" -> callControl(context, args)
+                "android_set_alarm" -> setAlarm(context, args)
+                "android_set_timer" -> setTimer(context, args)
+                "android_open_camera" -> openCamera(context, args)
+                "android_get_notifications" -> getNotifications(context, args)
+                "android_reply_notification" -> replyNotification(context, args)
                 else -> error("Unknown tool $name")
             }
         }.getOrElse { error("$name failed: ${it.message ?: it.javaClass.simpleName}") }
+    }
+
+    /** Runs [block] when the accessibility service is running; else returns [notReadyMessage]. */
+    private suspend fun withAccessibility(context: Context, block: suspend (AutomationAccessibilityService) -> JSONObject): JSONObject {
+        notReadyMessage(context)?.let { return error(it) }
+        val svc = AutomationAccessibilityService.instance ?: return error("Accessibility service not running")
+        return block(svc)
     }
 
     /** Runs [block] when the picked device access (ADB, Shizuku or root) can run commands now; else says why not. */
@@ -278,12 +379,14 @@ object AndroidAutomation {
         return metrics.widthPixels to metrics.heightPixels
     }
 
-    private fun foreground(svc: AutomationAccessibilityService): String {
+    private fun foreground(svc: AutomationAccessibilityService?): String {
+        svc ?: return ""
         val pkg = svc.rootInActiveWindow?.packageName ?: svc.foregroundPackage
         return "In front: ${pkg ?: "unknown"}"
     }
 
-    private fun status(context: Context, svc: AutomationAccessibilityService): JSONObject {
+    private fun status(context: Context): JSONObject {
+        val svc = AutomationAccessibilityService.instance
         val (w, h) = screenSize(context)
         val access = DeviceAccess.describe()
         val power = context.getSystemService(PowerManager::class.java)
@@ -294,8 +397,10 @@ object AndroidAutomation {
             put("screen_px", "${w}x$h")
             put("screen_on", power.isInteractive)
             put("locked", keyguard.isKeyguardLocked)
-            put("foreground_package", svc.rootInActiveWindow?.packageName ?: svc.foregroundPackage ?: JSONObject.NULL)
-            put("foreground_activity", svc.foregroundClass ?: JSONObject.NULL)
+            put("accessibility_service", svc != null)
+            put("notification_listener", AutomationNotificationListenerService.instance != null)
+            put("foreground_package", svc?.rootInActiveWindow?.packageName ?: svc?.foregroundPackage ?: JSONObject.NULL)
+            put("foreground_activity", svc?.foregroundClass ?: JSONObject.NULL)
             put("screenshots", if (canTakeScreenshots()) "yes" else "through ${DeviceAccess.mode.value.label} (Android 10 and older)")
             put("shell_access", access)
         }.toString(2))
@@ -666,7 +771,12 @@ object AndroidAutomation {
         return text(apps.take(500).joinToString("\n") { "${it.first} — ${it.second}" })
     }
 
-    private suspend fun launchApp(context: Context, svc: AutomationAccessibilityService, args: JSONObject): JSONObject {
+    private fun startActivityBestEffort(context: Context, intent: Intent) {
+        val starter: Context = AutomationAccessibilityService.instance ?: context
+        starter.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun launchApp(context: Context, args: JSONObject): JSONObject {
         val name = args.optString("name").trim()
         val pkg = args.optString("package").trim().ifBlank {
             if (name.isBlank()) return error("Give package or name.")
@@ -676,21 +786,18 @@ object AndroidAutomation {
         }
         val intent = context.packageManager.getLaunchIntentForPackage(pkg)
             ?: return error("$pkg isn't installed or can't be opened.")
-        // Started from the accessibility service, which Android lets open activities from the background
-        svc.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        svc.awaitIdle(500, 4_000)
-        return text("Opened $pkg. ${foreground(svc)}")
+        startActivityBestEffort(context, intent)
+        return text("Opened $pkg.")
     }
 
-    private suspend fun openIntent(svc: AutomationAccessibilityService, args: JSONObject): JSONObject {
+    private fun openIntent(context: Context, args: JSONObject): JSONObject {
         val intent = Intent(args.optString("action").ifBlank { Intent.ACTION_VIEW })
         args.optString("uri").ifBlank { null }?.let { intent.data = Uri.parse(it) }
         args.optString("package").ifBlank { null }?.let { intent.setPackage(it) }
         if (intent.action == Intent.ACTION_VIEW && intent.data == null) return error("ACTION_VIEW needs a uri.")
         return try {
-            svc.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            svc.awaitIdle(500, 4_000)
-            text("Started. ${foreground(svc)}")
+            startActivityBestEffort(context, intent)
+            text("Started.")
         } catch (e: android.content.ActivityNotFoundException) {
             error("No app can handle that intent.")
         }
@@ -714,11 +821,13 @@ object AndroidAutomation {
         return error("Timed out after ${timeout}ms: \"$wanted\" ${if (gone) "is still on screen" else "never appeared"}.")
     }
 
-    private suspend fun pressKey(svc: AutomationAccessibilityService, key: String): JSONObject {
+    private suspend fun pressKey(context: Context, key: String): JSONObject {
         val name = key.trim().uppercase().removePrefix("KEYCODE_")
         if (!Regex("^[A-Z0-9_]+$").matches(name)) return error("Invalid key \"$key\".")
         val notReady = DeviceAccess.notReadyMessage()
         if (notReady != null) {
+            val svc = AutomationAccessibilityService.instance
+                ?: return error("Pressing $name needs shell access ($notReady) or Accessibility service for BACK/HOME/APP_SWITCH.")
             val global = when (name) {
                 "BACK", "4" -> AccessibilityService.GLOBAL_ACTION_BACK
                 "HOME", "3" -> AccessibilityService.GLOBAL_ACTION_HOME
@@ -731,11 +840,12 @@ object AndroidAutomation {
             val result = DeviceAccess.shell("input keyevent $code", 15)
             if (result.exitCode != 0) return error(result.output.ifBlank { "input keyevent failed" })
         }
-        svc.awaitIdle()
-        return text("Pressed $name. ${foreground(svc)}")
+        val svc = AutomationAccessibilityService.instance
+        svc?.awaitIdle()
+        return text("Pressed $name. ${foreground(svc)}".trim())
     }
 
-    private suspend fun uninstall(context: Context, svc: AutomationAccessibilityService, args: JSONObject): JSONObject {
+    private suspend fun uninstall(context: Context, args: JSONObject): JSONObject {
         val pkg = packageArg(args)
         if (pkg == context.packageName) return error("Refusing to uninstall AntiGem itself.")
         if (DeviceAccess.notReadyMessage() == null) {
@@ -744,20 +854,24 @@ object AndroidAutomation {
             return if (out.contains("Success")) text("Uninstalled $pkg.") else error(out.ifBlank { "pm uninstall failed" })
         }
         @Suppress("DEPRECATION")
-        svc.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        svc.awaitIdle(500, 3_000)
+        startActivityBestEffort(context, Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg")))
+        AutomationAccessibilityService.instance?.awaitIdle(500, 3_000)
         return text("There's no shell access (ADB, Shizuku or root), so Android's uninstall dialog is open for $pkg. Read the UI tree and tap OK/Uninstall to confirm.")
     }
 
     // ---------------- screenshot ----------------
 
-    private suspend fun screenshot(context: Context, svc: AutomationAccessibilityService, maxWidth: Int, quality: Int): JSONObject {
-        val bitmap: Bitmap = if (canTakeScreenshots()) {
+    private suspend fun screenshot(context: Context, maxWidth: Int, quality: Int): JSONObject {
+        val svc = AutomationAccessibilityService.instance
+        val bitmap: Bitmap = if (canTakeScreenshots() && svc != null) {
             svc.screenshot().getOrElse { return error("Screenshot failed: ${it.message}") }
-        } else {
-            DeviceAccess.notReadyMessage()?.let { return error("Screenshots need Android 11+ or shell access. $it") }
+        } else if (DeviceAccess.notReadyMessage() == null) {
             val bytes = DeviceAccess.screencapPng()
             bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } ?: return error("screencap failed")
+        } else if (canTakeScreenshots()) {
+            return error(notReadyMessage(context) ?: "Accessibility service not running")
+        } else {
+            return error("Screenshots need Android 11+ (Accessibility) or shell access. ${DeviceAccess.notReadyMessage()}")
         }
         val (screenW, screenH) = screenSize(context)
         val scaled = if (bitmap.width > maxWidth) Bitmap.createScaledBitmap(bitmap, maxWidth, bitmap.height * maxWidth / bitmap.width, true) else bitmap
@@ -767,6 +881,366 @@ object AndroidAutomation {
             else "Screenshot ${scaled.width}x${scaled.height} of a ${screenW}x$screenH screen: multiply image coordinates by ${"%.3f".format(factor)} for android_tap/android_swipe."
         return JSONObject().put("content", JSONArray()
             .put(JSONObject().put("type", "image").put("data", Base64.encodeToString(jpeg, Base64.NO_WRAP)).put("mimeType", "image/jpeg"))
-            .put(JSONObject().put("type", "text").put("text", "$note ${foreground(svc)}")))
+            .put(JSONObject().put("type", "text").put("text", "$note ${foreground(svc)}".trim())))
+    }
+
+    // ---------------- 1-shot assistant tools ----------------
+
+    private fun hasPermission(context: Context, permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun getSchedule(context: Context, args: JSONObject): JSONObject {
+        if (!hasPermission(context, Manifest.permission.READ_CALENDAR)) {
+            return error("READ_CALENDAR permission is not granted. Ask the user to allow Calendar access for AntiGem in App Settings (or `pm grant ${context.packageName} android.permission.READ_CALENDAR`).")
+        }
+        val daysAhead = args.optInt("days_ahead", 7).coerceIn(1, 90)
+        val includeHidden = args.optBoolean("include_hidden", false)
+        val calendarFilter = args.optString("calendar_name").trim().ifBlank { null }
+        val query = args.optString("query").trim().ifBlank { null }
+        val limit = args.optInt("limit", 50).coerceIn(1, 200)
+
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val startMs = cal.timeInMillis
+        val endMs = startMs + daysAhead * 86_400_000L
+
+        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().apply {
+            ContentUris.appendId(this, startMs)
+            ContentUris.appendId(this, endMs)
+        }.build()
+
+        val projection = arrayOf(
+            CalendarContract.Instances.EVENT_ID,
+            CalendarContract.Instances.TITLE,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.END,
+            CalendarContract.Instances.ALL_DAY,
+            CalendarContract.Instances.EVENT_LOCATION,
+            CalendarContract.Instances.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Instances.DESCRIPTION
+        )
+        val selection = if (includeHidden) null else "${CalendarContract.Instances.VISIBLE} = 1"
+        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+        val events = JSONArray()
+
+        context.contentResolver.query(uri, projection, selection, null, "${CalendarContract.Instances.BEGIN} ASC")?.use { c ->
+            val idxId = c.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID)
+            val idxTitle = c.getColumnIndexOrThrow(CalendarContract.Instances.TITLE)
+            val idxBegin = c.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN)
+            val idxEnd = c.getColumnIndexOrThrow(CalendarContract.Instances.END)
+            val idxAllDay = c.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)
+            val idxLoc = c.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION)
+            val idxCalName = c.getColumnIndexOrThrow(CalendarContract.Instances.CALENDAR_DISPLAY_NAME)
+            val idxDesc = c.getColumnIndexOrThrow(CalendarContract.Instances.DESCRIPTION)
+
+            while (c.moveToNext() && events.length() < limit) {
+                val calName = c.getString(idxCalName).orEmpty()
+                val title = c.getString(idxTitle).orEmpty()
+                val loc = c.getString(idxLoc).orEmpty()
+                val desc = c.getString(idxDesc).orEmpty()
+                if (calendarFilter != null && !calName.contains(calendarFilter, ignoreCase = true)) continue
+                if (query != null && !listOf(title, loc, desc).any { it.contains(query, ignoreCase = true) }) continue
+                val begin = c.getLong(idxBegin)
+                val end = c.getLong(idxEnd)
+                events.put(JSONObject().apply {
+                    put("event_id", c.getLong(idxId))
+                    put("calendar_displayName", calName)
+                    put("title", title.ifBlank { "(No title)" })
+                    put("start", fmt.format(Date(begin)))
+                    put("end", fmt.format(Date(end)))
+                    put("start_ms", begin)
+                    put("end_ms", end)
+                    put("all_day", c.getInt(idxAllDay) != 0)
+                    if (loc.isNotBlank()) put("location", loc)
+                    if (desc.isNotBlank()) put("description", desc.take(300))
+                })
+            }
+        }
+        return text(JSONObject().apply {
+            put("days_ahead", daysAhead)
+            put("visible_only", !includeHidden)
+            put("count", events.length())
+            put("events", events)
+        }.toString(2))
+    }
+
+    private fun playMedia(context: Context, args: JSONObject): JSONObject {
+        val query = args.optString("query").trim()
+        val rawAction = args.optString("action").trim().lowercase()
+        val action = rawAction.ifBlank { if (query.isNotEmpty()) "search_play" else "toggle" }
+
+        if (action == "search_play" || (query.isNotEmpty() && rawAction.isBlank())) {
+            if (query.isEmpty()) return error("search_play requires a non-empty query.")
+            val pm = context.packageManager
+            val preferred = listOfNotNull(
+                args.optString("package").trim().ifBlank { null },
+                "app.morphe.android.apps.youtube.music",
+                "com.google.android.apps.youtube.music",
+                "com.spotify.music"
+            ).distinct()
+            val installedTarget = preferred.firstOrNull { pkg ->
+                runCatching { pm.getPackageInfo(pkg, 0) }.isSuccess
+            }
+            if (installedTarget != null) {
+                val playIntent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+                    putExtra(SearchManager.QUERY, query)
+                    putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+                    setPackage(installedTarget)
+                }
+                if (pm.resolveActivity(playIntent, 0) != null) {
+                    startActivityBestEffort(context, playIntent)
+                    return text("Playing \"$query\" in $installedTarget.")
+                }
+                val fallbackUri = when {
+                    installedTarget.contains("youtube.music") ->
+                        "https://music.youtube.com/search?q=${Uri.encode(query)}"
+                    installedTarget == "com.spotify.music" ->
+                        "spotify:search:${Uri.encode(query)}"
+                    else -> null
+                }
+                if (fallbackUri != null) {
+                    val uriIntent = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUri)).setPackage(installedTarget)
+                    if (pm.resolveActivity(uriIntent, 0) != null) {
+                        startActivityBestEffort(context, uriIntent)
+                        return text("Opened search for \"$query\" in $installedTarget.")
+                    }
+                }
+            }
+            val generic = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+                putExtra(SearchManager.QUERY, query)
+                putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+            }
+            return try {
+                startActivityBestEffort(context, generic)
+                text("Dispatched media search for \"$query\".")
+            } catch (_: android.content.ActivityNotFoundException) {
+                error("No media app found to handle \"$query\".")
+            }
+        }
+
+        val keyCode = when (action) {
+            "toggle", "play_pause" -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+            "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
+            "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
+            "next" -> KeyEvent.KEYCODE_MEDIA_NEXT
+            "previous" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+            "stop" -> KeyEvent.KEYCODE_MEDIA_STOP
+            else -> return error("Unknown media action \"$action\".")
+        }
+        val am = context.getSystemService(AudioManager::class.java)
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        return text("Dispatched media key: $action.")
+    }
+
+    private fun callContact(context: Context, args: JSONObject): JSONObject {
+        val query = args.getString("query").trim()
+        val explicitNumber = args.optString("number").trim().ifBlank { null }
+        if (query.isBlank() && explicitNumber == null) return error("query must not be empty.")
+        val confirm = args.optBoolean("confirm", false)
+        val looksLikeNumber = Regex("^[+0-9()\\s-]{3,}$").matches(query)
+
+        val matches = mutableListOf<Triple<String, String, String>>()
+        if (hasPermission(context, Manifest.permission.READ_CONTACTS)) {
+            val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+            val projection = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.TYPE,
+                ContactsContract.CommonDataKinds.Phone.LABEL
+            )
+            val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ? OR ${ContactsContract.CommonDataKinds.Phone.NUMBER} LIKE ?"
+            val like = "%$query%"
+            context.contentResolver.query(uri, projection, selection, arrayOf(like, like), "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")?.use { c ->
+                val idxName = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val idxNum = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                val idxType = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.TYPE)
+                val idxLabel = c.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.LABEL)
+                val seen = HashSet<String>()
+                while (c.moveToNext() && matches.size < 15) {
+                    val name = c.getString(idxName).orEmpty().trim()
+                    val num = c.getString(idxNum).orEmpty().trim()
+                    if (num.isEmpty()) continue
+                    val normalized = num.replace(Regex("[\\s()-]"), "")
+                    if (!seen.add("$name|$normalized")) continue
+                    val typeLabel = ContactsContract.CommonDataKinds.Phone.getTypeLabel(
+                        context.resources, c.getInt(idxType), c.getString(idxLabel)
+                    ).toString()
+                    matches += Triple(name, num, typeLabel)
+                }
+            }
+        } else if (!looksLikeNumber && explicitNumber == null) {
+            return error("READ_CONTACTS permission is not granted. Ask the user to allow Contacts access for AntiGem (or pass a phone number directly).")
+        }
+
+        if (!confirm) {
+            if (matches.isEmpty() && !looksLikeNumber && explicitNumber == null) {
+                return text("No contacts found matching \"$query\".")
+            }
+            return text(JSONObject().apply {
+                put("status", "confirmation_required")
+                put("message", "Confirm recipient with the user, then call android_call_contact again with confirm=true (and number if multiple matches).")
+                put("query", query)
+                if (explicitNumber != null) put("number", explicitNumber)
+                put("matches", JSONArray().apply {
+                    matches.forEach { (n, num, t) ->
+                        put(JSONObject().put("name", n).put("number", num).put("type", t))
+                    }
+                })
+            }.toString(2))
+        }
+
+        val dialNumber = explicitNumber ?: when {
+            looksLikeNumber -> query
+            matches.size == 1 -> matches[0].second
+            matches.isEmpty() -> return error("No contact or phone number found for \"$query\".")
+            else -> {
+                val distinctNums = matches.map { it.second.replace(Regex("[\\s()-]"), "") }.distinct()
+                if (distinctNums.size == 1) matches[0].second
+                else return text(JSONObject().apply {
+                    put("status", "ambiguous_matches")
+                    put("message", "Multiple numbers matched \"$query\". Ask the user which number to call and pass it in `number` with confirm=true.")
+                    put("matches", JSONArray().apply {
+                        matches.forEach { (n, num, t) ->
+                            put(JSONObject().put("name", n).put("number", num).put("type", t))
+                        }
+                    })
+                }.toString(2))
+            }
+        }
+
+        if (!hasPermission(context, Manifest.permission.CALL_PHONE)) {
+            return error("CALL_PHONE permission is not granted. Ask the user to allow Phone access for AntiGem (or `pm grant ${context.packageName} android.permission.CALL_PHONE`).")
+        }
+        startActivityBestEffort(context, Intent(Intent.ACTION_CALL, Uri.fromParts("tel", dialNumber, null)))
+        val label = matches.firstOrNull { it.second == dialNumber }?.first ?: dialNumber
+        return text("Calling $label ($dialNumber).")
+    }
+
+    private fun callControl(context: Context, args: JSONObject): JSONObject {
+        val am = context.getSystemService(AudioManager::class.java)
+        if (!args.has("speakerphone") && !args.has("mute")) {
+            return error("Provide speakerphone (boolean) and/or mute (boolean).")
+        }
+        if (args.has("speakerphone")) {
+            val on = args.getBoolean("speakerphone")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (on) {
+                    val speaker = am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    if (speaker != null) am.setCommunicationDevice(speaker)
+                } else {
+                    am.clearCommunicationDevice()
+                }
+            }
+            @Suppress("DEPRECATION")
+            am.isSpeakerphoneOn = on
+        }
+        if (args.has("mute")) {
+            am.isMicrophoneMute = args.getBoolean("mute")
+        }
+        val speakerState = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            am.communicationDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER || @Suppress("DEPRECATION") am.isSpeakerphoneOn
+        } else {
+            @Suppress("DEPRECATION") am.isSpeakerphoneOn
+        }
+        return text(JSONObject().apply {
+            put("speakerphone", speakerState)
+            put("microphone_muted", am.isMicrophoneMute)
+        }.toString(2))
+    }
+
+    private fun setAlarm(context: Context, args: JSONObject): JSONObject {
+        val hour = args.getInt("hour").coerceIn(0, 23)
+        val minute = args.getInt("minute").coerceIn(0, 59)
+        val message = args.optString("message").trim()
+        val skipUi = args.optBoolean("skip_ui", true)
+        val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+            putExtra(AlarmClock.EXTRA_HOUR, hour)
+            putExtra(AlarmClock.EXTRA_MINUTES, minute)
+            putExtra(AlarmClock.EXTRA_SKIP_UI, skipUi)
+            if (message.isNotEmpty()) putExtra(AlarmClock.EXTRA_MESSAGE, message)
+            if (args.has("vibrate")) putExtra(AlarmClock.EXTRA_VIBRATE, args.getBoolean("vibrate"))
+            val rawDays = args.optString("days").trim()
+            if (rawDays.isNotEmpty()) {
+                val dayMap = mapOf(
+                    "sun" to Calendar.SUNDAY, "sunday" to Calendar.SUNDAY, "1" to Calendar.SUNDAY,
+                    "mon" to Calendar.MONDAY, "monday" to Calendar.MONDAY, "2" to Calendar.MONDAY,
+                    "tue" to Calendar.TUESDAY, "tuesday" to Calendar.TUESDAY, "3" to Calendar.TUESDAY,
+                    "wed" to Calendar.WEDNESDAY, "wednesday" to Calendar.WEDNESDAY, "4" to Calendar.WEDNESDAY,
+                    "thu" to Calendar.THURSDAY, "thursday" to Calendar.THURSDAY, "5" to Calendar.THURSDAY,
+                    "fri" to Calendar.FRIDAY, "friday" to Calendar.FRIDAY, "6" to Calendar.FRIDAY,
+                    "sat" to Calendar.SATURDAY, "saturday" to Calendar.SATURDAY, "7" to Calendar.SATURDAY
+                )
+                val parsed = ArrayList(rawDays.split(',').mapNotNull { dayMap[it.trim().lowercase()] }.distinct())
+                if (parsed.isNotEmpty()) putIntegerArrayListExtra(AlarmClock.EXTRA_DAYS, parsed)
+            }
+        }
+        return try {
+            startActivityBestEffort(context, intent)
+            text("Alarm set for %02d:%02d%s.".format(hour, minute, if (message.isNotEmpty()) " ($message)" else ""))
+        } catch (_: android.content.ActivityNotFoundException) {
+            error("No Clock app available to handle ACTION_SET_ALARM.")
+        }
+    }
+
+    private fun setTimer(context: Context, args: JSONObject): JSONObject {
+        val seconds = args.getInt("seconds")
+        if (seconds < 1) return error("seconds must be >= 1.")
+        val message = args.optString("message").trim()
+        val skipUi = args.optBoolean("skip_ui", true)
+        val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+            putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+            putExtra(AlarmClock.EXTRA_SKIP_UI, skipUi)
+            if (message.isNotEmpty()) putExtra(AlarmClock.EXTRA_MESSAGE, message)
+        }
+        return try {
+            startActivityBestEffort(context, intent)
+            text("Timer started for ${seconds}s${if (message.isNotEmpty()) " ($message)" else ""}.")
+        } catch (_: android.content.ActivityNotFoundException) {
+            error("No Clock app available to handle ACTION_SET_TIMER.")
+        }
+    }
+
+    private fun openCamera(context: Context, args: JSONObject): JSONObject {
+        val mode = args.optString("mode", "photo").trim().lowercase()
+        val action = if (mode == "video") MediaStore.INTENT_ACTION_VIDEO_CAMERA else MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
+        return try {
+            startActivityBestEffort(context, Intent(action))
+            text("Opened camera ($mode).")
+        } catch (_: android.content.ActivityNotFoundException) {
+            error("No camera app found.")
+        }
+    }
+
+    private fun getNotifications(context: Context, args: JSONObject): JSONObject {
+        AutomationNotificationListenerService.notReadyMessage(context)?.let { return error(it) }
+        val svc = AutomationNotificationListenerService.instance
+            ?: return error("Notification listener not bound.")
+        val list = svc.listNotifications(
+            packageFilter = args.optString("package").trim().ifBlank { null },
+            query = args.optString("query").trim().ifBlank { null },
+            includeOngoing = args.optBoolean("include_ongoing", false),
+            limit = args.optInt("limit", 30).coerceIn(1, 100)
+        )
+        return text(JSONObject().apply {
+            put("count", list.length())
+            put("notifications", list)
+        }.toString(2))
+    }
+
+    private fun replyNotification(context: Context, args: JSONObject): JSONObject {
+        AutomationNotificationListenerService.notReadyMessage(context)?.let { return error(it) }
+        val svc = AutomationNotificationListenerService.instance
+            ?: return error("Notification listener not bound.")
+        val key = args.getString("key").trim()
+        val message = args.getString("message")
+        return svc.replyToNotification(key, message).fold(
+            onSuccess = { text(it) },
+            onFailure = { error(it.message ?: "Failed to reply") }
+        )
     }
 }
