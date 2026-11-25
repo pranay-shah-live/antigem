@@ -12,15 +12,25 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -123,13 +133,28 @@ fun FloatingChatWindow(
     }
     BackHandler(enabled = currentViewMode == AppViewMode.CHAT) { onMinimize() }
 
+    val windowShape = RoundedCornerShape(18.dp)
     Box(Modifier.fillMaxSize()) {
         Column(
-            Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.background),
+            Modifier
+                .fillMaxSize()
+                .shadow(16.dp, windowShape)
+                .clip(windowShape)
+                .background(MaterialTheme.colorScheme.background)
+                .border(
+                    width = 1.25.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            ComposeColor.White.copy(alpha = 0.22f),
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                        )
+                    ),
+                    shape = windowShape
+                ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
-                Modifier.fillMaxWidth().height(42.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+                Modifier.fillMaxWidth().height(42.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)).padding(end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -140,13 +165,26 @@ fun FloatingChatWindow(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                TextButton(onClick = { aspectRatioLocked = !aspectRatioLocked }, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                    Text(if (aspectRatioLocked) "Ratio on" else "Ratio off", style = MaterialTheme.typography.labelSmall)
+                IconButton(onClick = { aspectRatioLocked = !aspectRatioLocked }, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        Icons.Rounded.AspectRatio,
+                        contentDescription = if (aspectRatioLocked) "Unlock aspect ratio" else "Lock aspect ratio",
+                        tint = if (aspectRatioLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
-                TextButton(onClick = onToggleMaximize, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Max") }
-                TextButton(onClick = onOpenFullApp, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Open") }
-                TextButton(onClick = onMinimize, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Min") }
-                TextButton(onClick = onClose, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("×") }
+                IconButton(onClick = onToggleMaximize, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Rounded.OpenInFull, contentDescription = "Maximize", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onOpenFullApp, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Rounded.OpenInNew, contentDescription = "Open full app", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onMinimize, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Rounded.Remove, contentDescription = "Minimize", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onClose, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
             }
 
             Box(Modifier.fillMaxWidth().weight(1f)) {

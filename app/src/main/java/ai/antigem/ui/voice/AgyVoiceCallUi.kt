@@ -16,6 +16,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -75,6 +76,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -829,8 +831,17 @@ fun AgyVoiceFloatingCircle(
     Box(Modifier.onSizeChanged(onSize).padding(6.dp)) {
         Box(Modifier.size(58.dp).then(drag), contentAlignment = Alignment.Center) {
             Box(
-                Modifier.size(48.dp).graphicsLayer { scaleX = pulse; scaleY = pulse }.clip(CircleShape)
+                Modifier.size(48.dp).graphicsLayer { scaleX = pulse; scaleY = pulse }
+                    .shadow(12.dp, CircleShape)
+                    .clip(CircleShape)
                     .background(Brush.radialGradient(listOf(rgb(voice.glint), rgb(voice.core), rgb(voice.deep))))
+                    .border(
+                        width = 1.5.dp,
+                        brush = Brush.linearGradient(
+                            listOf(Color.White.copy(alpha = 0.45f), rgb(voice.core).copy(alpha = 0.75f))
+                        ),
+                        shape = CircleShape
+                    )
             )
             when {
                 st.phase == Phase.FAILED -> Box(
@@ -869,11 +880,20 @@ fun AgyVoiceFloatingPanel(
     val failed = st.phase == Phase.FAILED
     val shown = remember { MutableTransitionState(false) }.apply { targetState = true }
     AnimatedVisibility(visibleState = shown, enter = slideInVertically { it / 2 } + fadeIn()) {
+        val panelShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         Box(
             Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .shadow(16.dp, panelShape)
+                .clip(panelShape)
                 .background(Brush.verticalGradient(listOf(rgb(voice.deep), Ink, Ink)))
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.2f), Color.Transparent)
+                    ),
+                    shape = panelShape
+                )
         ) {
             // soft colour wash behind the orb
             Canvas(Modifier.fillMaxSize()) {
