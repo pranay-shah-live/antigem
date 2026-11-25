@@ -170,7 +170,10 @@ object GlobalContext {
         append("$h Asking the user\n")
         append("Request vague or ambiguous? Don't guess: ask with your question tool (e.g. AskUserQuestion), all at once, with a few options.\n\n")
         append("$h Node projects\n")
-        append("New projects: use pnpm (faster, less disk) unless the user says otherwise. Existing npm projects (package-lock.json) stay on npm.")
+        append("New projects: use pnpm (faster, less disk) unless the user says otherwise. Existing npm projects (package-lock.json) stay on npm.\n\n")
+        append("$h Fast decisions (Jev)\n")
+        append("- For batch classification/triage (5+ items) or 2+ criteria on one record, call `jev_batch` or `jev_ask` (`compact: true`) instead of writing per-item prose; auto-act at `confidence >= 0.75` (`noul >= 0.85` / `<= 0.15`).\n")
+        append("- Keep regex/dedup in code; never use Jev for prose, code, or trivial single checks.")
     }.trimEnd()
 
     // ------------------------------------------------------------------ what goes where

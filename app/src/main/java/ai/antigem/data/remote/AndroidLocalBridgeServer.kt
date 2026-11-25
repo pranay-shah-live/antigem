@@ -34,7 +34,8 @@ class AndroidLocalBridgeServer private constructor() {
         NOTES("notes_mcp"),
         JARVIS("jarvis_mcp"),
         THEME("theme_mcp"),
-        MINI_APP_DEVELOPER("mini_app_developer_mcp")
+        MINI_APP_DEVELOPER("mini_app_developer_mcp"),
+        JEV("jev_mcp")
     }
 
     companion object {
@@ -46,6 +47,7 @@ class AndroidLocalBridgeServer private constructor() {
         const val JARVIS_MCP_NAME = "jarvis_mcp"
         const val THEME_MCP_NAME = "theme_mcp"
         const val MINI_APP_DEVELOPER_MCP_NAME = "mini_app_developer_mcp"
+        const val JEV_MCP_NAME = "jev_mcp"
         fun isDeveloperMcpName(name: String) = name == DEVELOPER_MCP_NAME || name == LEGACY_DEVELOPER_MCP_NAME
         private const val TAG = "AndroidBridgeServer"
         private const val MAX_HEADER_BYTES = 64 * 1024
@@ -101,6 +103,7 @@ class AndroidLocalBridgeServer private constructor() {
                 ai.antigem.data.remote.RemoteServerManager.resyncTunnels()
                 // rish reads the port from a file: rewrite it when it isn't the default one
                 appContext?.let { ctx -> runCatching { ai.antigem.data.adb.DeviceAccess.ensureTerminalCommands(ctx) } }
+                appContext?.let { ctx -> runCatching { ensureDefaultJevMcpConfig(ctx) } }
 
                 while (isRunning && !serverSocket!!.isClosed) {
                     val client = serverSocket!!.accept()
@@ -123,6 +126,50 @@ class AndroidLocalBridgeServer private constructor() {
         } catch (_: Exception) {}
         serverSocket = null
         Log.i(TAG, "Bridge Server stopped")
+    }
+
+    /**
+     * Automatically registers or refreshes `jev_mcp` in the local Antigravity MCP config files
+     * so agents can offload batch/triage decisions on turn 1 with zero manual setup.
+     */
+    private fun ensureDefaultJevMcpConfig(context: Context) {
+        val prefs = context.getSharedPreferences("bridge_auto_mcp", Context.MODE_PRIVATE)
+        val alreadySeeded = prefs.getBoolean("jev_mcp_seeded", false)
+        val targets = listOf(
+            File(context.filesDir, "home/.gemini/config/mcp_config.json"),
+            File(context.filesDir, "home/.gemini/antigravity/mcp_config.json")
+        )
+        val jevUrl = "http://127.0.0.1:$boundPort/jev"
+        var wroteAny = false
+
+        for (file in targets) {
+            runCatching {
+                val raw = if (file.exists()) file.readText() else "{}"
+                val root = if (raw.trim().startsWith("{")) JSONObject(raw) else JSONObject()
+                val servers = root.optJSONObject("mcpServers") ?: JSONObject().also { root.put("mcpServers", it) }
+                val existing = servers.optJSONObject(JEV_MCP_NAME)
+                if (existing == null && alreadySeeded) return@runCatching
+                if (existing?.optBoolean("disabled", false) == true) return@runCatching
+
+                val entry = existing ?: JSONObject()
+                entry.put("serverUrl", jevUrl)
+                if (cachedDeviceId.isNotBlank()) {
+                    val headersObj = entry.optJSONObject("headers") ?: JSONObject()
+                    headersObj.put("X-Device-Id", cachedDeviceId)
+                    entry.put("headers", headersObj)
+                }
+                servers.put(JEV_MCP_NAME, entry)
+
+                file.parentFile?.mkdirs()
+                val tmp = File(file.parentFile, "${file.name}.tmp")
+                tmp.writeText(root.toString(2))
+                if (!tmp.renameTo(file)) file.writeText(root.toString(2))
+                wroteAny = true
+            }
+        }
+        if (wroteAny && !alreadySeeded) {
+            prefs.edit().putBoolean("jev_mcp_seeded", true).apply()
+        }
     }
 
     /** One HTTP/1.1 request; [body] is the raw body bytes decoded as UTF-8, [bytes] the raw body itself. */
@@ -266,6 +313,10 @@ class AndroidLocalBridgeServer private constructor() {
                     path == "/jarvis" -> handleMcpHttp(McpEndpoint.JARVIS, method, body, out, headers["mcp-session-id"])
                     path == "/theme" -> handleMcpHttp(McpEndpoint.THEME, method, body, out)
                     path == "/mini_app_developer" -> handleMcpHttp(McpEndpoint.MINI_APP_DEVELOPER, method, body, out)
+                    path == "/jev" -> {
+                        socket.soTimeout = 120_000
+                        handleMcpHttp(McpEndpoint.JEV, method, body, out)
+                    }
                     path == "/api/health" -> {
                         val res = JSONObject().apply {
                             put("status", "ok")
@@ -297,7 +348,7 @@ class AndroidLocalBridgeServer private constructor() {
             if (out != null && req != null && !out.used) {
                 runCatching {
                     val path = req.rawPath.substringBefore("?")
-                    if (path == "/browser" || path == "/terminal" || path == "/google_flow" || path == "/extension_developer" || path == "/android" || path == "/notes" || path == "/jarvis" || path == "/theme" || path == "/mini_app_developer") {
+                    if (path == "/browser" || path == "/terminal" || path == "/google_flow" || path == "/extension_developer" || path == "/android" || path == "/notes" || path == "/jarvis" || path == "/theme" || path == "/mini_app_developer" || path == "/jev") {
                         val id = runCatching { JSONObject(req.body).opt("id") }.getOrNull()
                         sendResponse(out, 200, "application/json", jsonRpcError(id, -32603, "Internal error: ${t.message ?: t.javaClass.simpleName}").toString())
                     } else {
@@ -466,6 +517,7 @@ class AndroidLocalBridgeServer private constructor() {
                     if (endpoint == McpEndpoint.JARVIS) put("instructions", ai.antigem.data.jarvis.JarvisMcp.INSTRUCTIONS)
                     if (endpoint == McpEndpoint.THEME) put("instructions", ai.antigem.theme.ThemeMcp.INSTRUCTIONS)
                     if (endpoint == McpEndpoint.MINI_APP_DEVELOPER) put("instructions", ai.antigem.ui.miniapps.MiniAppDevMcp.INSTRUCTIONS)
+                    if (endpoint == McpEndpoint.JEV) put("instructions", ai.antigem.data.jev.JevMcp.INSTRUCTIONS)
                     if (endpoint == McpEndpoint.BROWSER) put("instructions", ai.antigem.ui.browser.mcp.BrowserMcp.INSTRUCTIONS + (appContext?.let { ai.antigem.data.rea.ReaManager.browserMcpNote(it) } ?: ""))
                     if (endpoint == McpEndpoint.EXTENSION_DEVELOPER) put("instructions", "Start with webview_extension_docs. Read developer-mcp.md and the required API references, create a draft, write files, install or update, discover tools with webview_extension_test, and inspect logs to fix failures. No app source or manual ZIP handling is needed.")
                     put("capabilities", JSONObject().apply {
@@ -520,6 +572,7 @@ class AndroidLocalBridgeServer private constructor() {
         if (endpoint == McpEndpoint.JARVIS) return ai.antigem.data.jarvis.JarvisMcp.tools()
         if (endpoint == McpEndpoint.THEME) return ai.antigem.theme.ThemeMcp.tools()
         if (endpoint == McpEndpoint.MINI_APP_DEVELOPER) return ai.antigem.ui.miniapps.MiniAppDevMcp.tools()
+        if (endpoint == McpEndpoint.JEV) return ai.antigem.data.jev.JevMcp.tools()
         if (endpoint == McpEndpoint.BROWSER) return ai.antigem.ui.browser.mcp.BrowserMcp.tools()
         val tools = JSONArray()
         val terminalEnabled = endpoint == McpEndpoint.TERMINAL
@@ -631,6 +684,7 @@ class AndroidLocalBridgeServer private constructor() {
         if (toolName.startsWith("jarvis_")) return ai.antigem.data.jarvis.JarvisMcp.call(appContext!!, toolName, args)
         if (toolName.startsWith("theme_")) return ai.antigem.theme.ThemeMcp.call(toolName, args)
         if (toolName.startsWith("miniapp_")) return ai.antigem.ui.miniapps.MiniAppDevMcp.call(appContext!!, toolName, args)
+        if (toolName.startsWith("jev_")) return ai.antigem.data.jev.JevMcp.call(toolName, args)
         if (toolName.startsWith("browser_")) return ai.antigem.ui.browser.mcp.BrowserMcp.call(appContext!!, toolName, args)
 
         if (toolName.startsWith("flow_")) {
