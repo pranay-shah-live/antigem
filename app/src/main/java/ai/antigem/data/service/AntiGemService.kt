@@ -168,11 +168,15 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
 
     private fun observeTerminalSessions() {
         serviceScope.launch {
+            val chatFlow = ai.antigem.ui.chat.ChatViewModelHolder.viewModel?.allConversations
+                ?: kotlinx.coroutines.flow.flowOf(emptyList())
             kotlinx.coroutines.flow.combine(
                 LocalTerminalManager.sessions,
-                ai.antigem.data.run.RunManager.runs
-            ) { sessions, runs ->
-                sessions.size to runs.count { it.status == ai.antigem.data.run.RunStatus.RUNNING }
+                ai.antigem.data.run.RunManager.runs,
+                chatFlow
+            ) { sessions, runs, conversations ->
+                val activeChats = conversations.count { it.isRunning }
+                (sessions.size + activeChats) to runs.count { it.status == ai.antigem.data.run.RunStatus.RUNNING }
             }.collect { (sessions, running) ->
                 currentSessionCount = sessions
                 currentRunCount = running
