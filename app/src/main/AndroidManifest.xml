@@ -52,7 +52,7 @@
 
     <application
         android:name=".AntiGemApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:largeHeap="true"
         android:hasFragileUserData="true"
         android:manageSpaceActivity="ai.antigem.ui.settings.ManageSpaceActivity"
@@ -565,7 +565,7 @@
         </activity>
         <activity
             android:name="ai.antigem.ui.miniapps.MiniAppActivity"
-            android:exported="true"
+            android:exported="false"
             android:documentLaunchMode="intoExisting"
             android:theme="@style/Theme.AntiGem.MiniApp"
             android:windowSoftInputMode="stateHidden|adjustResize"
