@@ -9,12 +9,18 @@ import android.widget.Toast
 import ai.antigem.data.adb.AdbConnectManager
 import ai.antigem.data.updater.PluginUpdateCheckWorker
 import ai.antigem.data.updater.UpdateCheckWorker
+import com.telemetrydeck.sdk.Signal
+import com.telemetrydeck.sdk.SignalCache
 import com.telemetrydeck.sdk.TelemetryDeck
 import com.telemetrydeck.sdk.TelemetryDeckSessionManagerProvider
 import com.telemetrydeck.sdk.TelemetryDeckSignalProcessor
+import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import ai.antigem.i18n.L
 
 class AntiGemApplication : Application(), coil.ImageLoaderFactory {
     /**
@@ -49,6 +55,8 @@ class AntiGemApplication : Application(), coil.ImageLoaderFactory {
         ai.antigem.data.preferences.AuthPreferences(this)
         // the chosen light / dark themes and the custom ones, before the first screen draws
         ai.antigem.theme.ThemeManager.init(this)
+        // the app language (Settings → Language), from its cache, before the first screen draws
+        ai.antigem.i18n.LanguageManager.init(this)
         UpdateCheckWorker.schedule(this)
         PluginUpdateCheckWorker.schedule(this)
         // mini app reminders and exact-time tasks: alarms again (Android may have dropped them), off the main thread
@@ -69,7 +77,7 @@ class AntiGemApplication : Application(), coil.ImageLoaderFactory {
         if (!BuildConfig.DEBUG && !isOfficialRelease()) {
             Toast.makeText(
                 this,
-                "Unofficial build: analytics disabled. Developer: set your own TelemetryDeck app ID and RELEASE_CERT_SHA256 in AntiGemApplication.kt.",
+                L.app.antiGemApplication.unofficialBuildAnalyticsDisabled,
                 Toast.LENGTH_LONG
             ).show()
             return
@@ -86,6 +94,8 @@ class AntiGemApplication : Application(), coil.ImageLoaderFactory {
                 // and no session tracking (the SDK's would send a signal per open and time how long the app is used)
                 .sendNewSessionBeganSignal(false)
                 .sessionProvider(NoSessionTracking())
+                // the SDK's own file cache crashes the app when storage is full (see SafeSignalCache)
+                .signalCache(SafeSignalCache(cacheDir))
         )
         reportInstallOrUpdate()
     }
@@ -116,6 +126,38 @@ class AntiGemApplication : Application(), coil.ImageLoaderFactory {
         override fun getCurrentSessionID(): UUID = sessionId
         override fun startNewSession(sessionID: UUID) { sessionId = sessionID }
         override fun setFirstSessionID(sessionID: UUID) { sessionId = sessionID }
+    }
+
+    /**
+     * Stands in for the SDK's PersistentSignalCache, which writes cache/telemetrydeck.json at start and on every send
+     * tick without catching errors: with storage full (ENOSPC) its background timer threw and crashed the app.
+     * Same file and format (signals queued by older versions are still sent), but a failed read or write is ignored
+     * (the signals stay in memory), and the file is written only when the queue changes.
+     */
+    private class SafeSignalCache(dir: File) : SignalCache {
+        private val file = File(dir, "telemetrydeck.json")
+        private val serializer = ListSerializer(Signal.serializer())
+        private val queue: MutableList<Signal> =
+            runCatching { Json.decodeFromString(serializer, file.readText()) }.getOrDefault(emptyList()).toMutableList()
+
+        @Synchronized override fun add(signal: Signal) {
+            queue += signal
+            save()
+        }
+
+        @Synchronized override fun empty(): List<Signal> {
+            if (queue.isEmpty()) return emptyList()
+            val all = queue.toList()
+            queue.clear()
+            save()
+            return all
+        }
+
+        @Synchronized override fun count(): Int = queue.size
+
+        private fun save() {
+            runCatching { file.writeText(Json.encodeToString(serializer, queue)) }
+        }
     }
 
     private fun isOfficialRelease(): Boolean = runCatching {

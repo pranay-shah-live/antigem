@@ -1,11 +1,16 @@
 {
-  "version_code": 2040001,
-  "version_name": "F2.0.4",
+  "version_code": 2050001,
+  "version_name": "F2.0.5",
   "min_supported_version_code": 2,
   "changelog": [
-    "Merged upstream 2.0.4/2.0.5 features: Home screen widgets (Chats, Quick actions, One chat, Scripts), Shizuku & Root device access modes, OpenCode model variants and effort controls, Terminal sessions drawer with IME paste fixes, and floating switcher overview.",
-    "Page overview: view active pages as cards, tap to open, hold and drag to reorder.",
-    "Preserved AntiGem Fork architecture: persistent WindowManager overlay with background touch pass-through, 8-way resizing & proportional aspect ratio lock, and Notes sync integrity."
+    "Added native jev_mcp backend (jev-1.13-free) with automatic agent registration and Global Context offloading rules for fast batch triage and multi-criteria scoring.",
+    "Added 1-shot assistant tools and NotificationListenerService integration to android_automation_mcp.",
+    "Merged upstream updates through 2.0.5-beta.5: Discord theme (default dark theme) and custom theme indicator in ThemeGallery.",
+    "Added file picker settings for AntiGem and Ubuntu chroot, plus storage management and installation error handling.",
+    "Security & SSH: added LocalServerAuth (keeps bridge token and phone tools key out of ps on servers), strict SSH host key checking via SshSessionFactory, and exact host matching for local dev SSL.",
+    "Terminal & IDE: improved keyboard focus handling in LocalTerminalDialog, Termux Recents icon, session management, IDE file tree refactor, delayed loading indicators, and FloatingSwitcherWidget press feedback.",
+    "Fixes: runtime language-change chat loader crash fix, TTS engine startup fallback, termux-x11 RUN_COMMAND update, and coreLibraryDesugaring 2.1.5.",
+    "Preserved AntiGem Fork architecture: persistent WindowManager overlay, 8-way resizing with proportional aspect ratio lock, Notes sync integrity, ai.antidev package ID, and in-app debug update checks."
   ],
   "is_critical": false
 }

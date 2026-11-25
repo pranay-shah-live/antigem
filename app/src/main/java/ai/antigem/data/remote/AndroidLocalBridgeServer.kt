@@ -46,6 +46,7 @@ class AndroidLocalBridgeServer private constructor() {
         const val NOTES_MCP_NAME = "notes_mcp"
         const val JARVIS_MCP_NAME = "jarvis_mcp"
         const val THEME_MCP_NAME = "theme_mcp"
+        const val LANGUAGE_MCP_NAME = "language_mcp"
         const val MINI_APP_DEVELOPER_MCP_NAME = "mini_app_developer_mcp"
         const val JEV_MCP_NAME = "jev_mcp"
         fun isDeveloperMcpName(name: String) = name == DEVELOPER_MCP_NAME || name == LEGACY_DEVELOPER_MCP_NAME
@@ -64,17 +65,13 @@ class AndroidLocalBridgeServer private constructor() {
     // one thread per open request: Flow calls wait up to ~50 s each, so a fixed pool would make parallel calls queue
     private val clientThreadPool = Executors.newCachedThreadPool()
     private var appContext: Context? = null
-    @Volatile
-    private var cachedDeviceId: String = ""
     var boundPort: Int = DEFAULT_PORT
         private set
 
     fun start(context: Context, port: Int = DEFAULT_PORT) {
         if (isRunning) return
         appContext = context.applicationContext
-        cachedDeviceId = try {
-            android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: ""
-        } catch (_: Exception) { "" }
+        LocalServerAuth.key(context) // created now, so the first request does not wait for it
         BrowserSessionManager.instance.init(context)
         LocalTerminalBridge.instance.init(context)
         ai.antigem.ui.browser.BrowserExtensionManager.instance.init(context)
@@ -287,15 +284,9 @@ class AndroidLocalBridgeServer private constructor() {
                 return
             }
 
-            // Verify device ID security header for all non-OPTIONS requests
-            if (cachedDeviceId.length <= 5) {
-                Log.e(TAG, "Bridge server security error: cachedDeviceId is not initialized or invalid")
-                sendResponse(out, 500, "application/json", "{\"error\": \"Server security error: Device ID not initialized or invalid\"}")
-                return
-            }
-
-            val clientDeviceId = headers["x-device-id"]
-            if (clientDeviceId.isNullOrBlank() || clientDeviceId != cachedDeviceId) {
+            // Every non-OPTIONS request needs the local server key (LocalServerAuth) in X-Device-Id
+            val ctx = appContext
+            if (ctx == null || !LocalServerAuth.matches(ctx, headers["x-device-id"])) {
                 Log.w(TAG, "Blocked unauthorized request to $path (missing or invalid X-Device-Id header)")
                 sendResponse(out, 401, "application/json", "{\"error\": \"Unauthorized: Invalid or missing X-Device-Id header\"}")
                 return
@@ -678,6 +669,7 @@ class AndroidLocalBridgeServer private constructor() {
         if (toolName.startsWith("notes_")) return ai.antigem.data.notes.NotesMcp.call(appContext!!, toolName, args)
         if (toolName.startsWith("jarvis_")) return ai.antigem.data.jarvis.JarvisMcp.call(appContext!!, toolName, args)
         if (toolName.startsWith("theme_")) return ai.antigem.theme.ThemeMcp.call(toolName, args)
+        if (toolName.startsWith("language_")) return ai.antigem.i18n.LanguageMcp.call(appContext!!, toolName, args)
         if (toolName.startsWith("miniapp_")) return ai.antigem.ui.miniapps.MiniAppDevMcp.call(appContext!!, toolName, args)
         if (toolName.startsWith("jev_")) return ai.antigem.data.jev.JevMcp.call(toolName, args)
         if (toolName.startsWith("browser_")) return ai.antigem.ui.browser.mcp.BrowserMcp.call(appContext!!, toolName, args)

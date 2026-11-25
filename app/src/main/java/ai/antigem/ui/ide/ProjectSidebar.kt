@@ -39,8 +39,10 @@ import ai.antigem.ui.components.AppToastHelper
 import ai.antigem.ui.components.ChatToastType
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ai.antigem.i18n.L
 
 enum class SidebarTab {
     EXPLORER,
@@ -52,8 +54,10 @@ enum class SidebarTab {
 fun ProjectSidebar(
     projects: List<ProjectItem>,
     activeProject: ProjectItem?,
-    fileTree: List<FileNode>,
+    fileTree: IdeFileTreeState,
     activeFilePath: String?,
+    /** The file being opened (its row shows a spinner). */
+    openingPath: String? = null,
     onSelectProject: (ProjectItem) -> Unit,
     onOpenFileManager: () -> Unit = {},
     onRemoveProject: (ProjectItem) -> Unit = {},
@@ -75,7 +79,7 @@ fun ProjectSidebar(
     var showRenameDialog by remember { mutableStateOf<FileNode?>(null) }
     var showDeleteDialog by remember { mutableStateOf<FileNode?>(null) }
     var showDetailsDialog by remember { mutableStateOf<FileNode?>(null) }
-    var expandedPaths by remember { mutableStateOf(setOf<String>()) }
+    val treeScope = rememberCoroutineScope()
     val daemonStatus by ai.antigem.data.daemon.IdeDaemonManager.status.collectAsState()
 
     Column(
@@ -109,14 +113,14 @@ fun ProjectSidebar(
                 Spacer(modifier = Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = activeProject?.name ?: "Select Project",
+                        text = activeProject?.name ?: L.ide.projectSidebar.selectProject,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = activeProject?.path ?: "No project opened",
+                        text = activeProject?.path ?: L.ide.projectSidebar.noProjectOpened,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -133,7 +137,7 @@ fun ProjectSidebar(
                     onDismissRequest = { projectsDropdownExpanded = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Available Projects", fontWeight = FontWeight.Bold) },
+                        text = { Text(L.ide.projectSidebar.availableProjects, fontWeight = FontWeight.Bold) },
                         onClick = {},
                         enabled = false
                     )
@@ -141,7 +145,7 @@ fun ProjectSidebar(
 
                     if (projects.isEmpty()) {
                         DropdownMenuItem(
-                            text = { Text("No projects found in Termux") },
+                            text = { Text(L.ide.projectSidebar.noProjectsFoundInTermux) },
                             onClick = { projectsDropdownExpanded = false }
                         )
                     } else {
@@ -179,7 +183,7 @@ fun ProjectSidebar(
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Outlined.Close,
-                                                    contentDescription = "Remove project",
+                                                    contentDescription = L.ide.projectSidebar.removeProject,
                                                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                                     modifier = Modifier.size(14.dp)
                                                 )
@@ -197,7 +201,7 @@ fun ProjectSidebar(
 
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("Browse / File Manager...", color = MaterialTheme.colorScheme.primary) },
+                        text = { Text(L.ide.projectSidebar.browseFileManager, color = MaterialTheme.colorScheme.primary) },
                         leadingIcon = {
                             Icon(Icons.Default.FolderOpen, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         },
@@ -247,7 +251,7 @@ fun ProjectSidebar(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Explorer",
+                        text = L.ide.projectSidebar.explorer,
                         fontSize = 11.5.sp,
                         fontWeight = if (selectedTab == SidebarTab.EXPLORER) FontWeight.Bold else FontWeight.Medium,
                         color = if (selectedTab == SidebarTab.EXPLORER) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -275,7 +279,7 @@ fun ProjectSidebar(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Git",
+                        text = L.ide.projectSidebar.git,
                         fontSize = 11.5.sp,
                         fontWeight = if (selectedTab == SidebarTab.SOURCE_CONTROL) FontWeight.Bold else FontWeight.Medium,
                         color = if (selectedTab == SidebarTab.SOURCE_CONTROL) ClaudeTerracotta else MaterialTheme.colorScheme.onSurfaceVariant
@@ -302,7 +306,7 @@ fun ProjectSidebar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "FILES",
+                    text = L.ide.projectSidebar.files,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -322,7 +326,7 @@ fun ProjectSidebar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.NoteAdd,
-                            contentDescription = "New File",
+                            contentDescription = L.ide.projectSidebar.newFile,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp)
                         )
@@ -339,7 +343,7 @@ fun ProjectSidebar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.CreateNewFolder,
-                            contentDescription = "New Folder",
+                            contentDescription = L.ide.projectSidebar.newFolder,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp)
                         )
@@ -353,7 +357,7 @@ fun ProjectSidebar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Terminal,
-                            contentDescription = "Terminal",
+                            contentDescription = L.common.terminal,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp)
                         )
@@ -364,7 +368,7 @@ fun ProjectSidebar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.FolderOpen,
-                            contentDescription = "File Manager",
+                            contentDescription = L.ide.projectSidebar.fileManager,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp)
                         )
@@ -375,7 +379,7 @@ fun ProjectSidebar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
+                            contentDescription = L.common.refresh,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp)
                         )
@@ -385,8 +389,9 @@ fun ProjectSidebar(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
-            // --- 4. Recursive File Tree ---
-            if (fileTree.isEmpty()) {
+            // --- 4. File Tree: one flat lazy list (only the rows on screen are drawn), folders read when opened ---
+            val rootEntries = fileTree.rootEntries
+            if (rootEntries.isNullOrEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -394,6 +399,7 @@ fun ProjectSidebar(
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    val rootError = fileTree.rootError
                     if (daemonStatus != ai.antigem.data.daemon.DaemonStatus.RUNNING) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -407,7 +413,7 @@ fun ProjectSidebar(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "IDE Server Offline",
+                                text = L.ide.projectSidebar.ideServerOffline,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -415,7 +421,7 @@ fun ProjectSidebar(
                             Spacer(modifier = Modifier.height(4.dp))
                             val ep = AuthPreferences.currentBridgeHttpUrl.removePrefix("http://").removePrefix("https://")
                             Text(
-                                text = "Checking $ep (auto-retrying)",
+                                text = L.ide.projectSidebar.checkingEpAutoRetrying(ep),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -432,49 +438,65 @@ fun ProjectSidebar(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Retry Now", fontSize = 13.sp)
+                                Text(L.ide.projectSidebar.retryNow, fontSize = 13.sp)
                             }
                         }
+                    } else if (activeProject != null && rootError != null) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = rootError,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            TextButton(onClick = onRefreshTree) { Text(L.common.retry) }
+                        }
+                    } else if (activeProject != null && rootEntries == null) {
+                        AfterDelay { CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp) }
                     } else {
                         Text(
-                            text = if (activeProject == null) "Open or create a project to view files" else "Project is empty",
+                            text = if (activeProject == null) L.ide.projectSidebar.openOrCreateAProjectTo else L.ide.projectSidebar.projectIsEmpty,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             } else {
+                val rows = fileTree.rows
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
                         .weight(1f)
                 ) {
-                    items(fileTree) { node ->
-                        FileTreeNodeItem(
-                            node = node,
-                            depth = 0,
-                            activeFilePath = activeFilePath,
-                            expandedPaths = expandedPaths,
-                            onToggleExpand = { path ->
-                                expandedPaths = if (expandedPaths.contains(path)) expandedPaths - path else expandedPaths + path
-                            },
-                            onOpenFile = onOpenFile,
-                            onCreateChildFile = { parentPath, isDir ->
-                                isNewFolderMode = isDir
-                                showCreateFileDialog = parentPath
-                                expandedPaths = expandedPaths + parentPath
-                            },
-                            onRenameRequested = { targetNode ->
-                                showRenameDialog = targetNode
-                            },
-                            onDetailsRequested = { targetNode ->
-                                showDetailsDialog = targetNode
-                            },
-                            onDeleteRequested = { targetNode ->
-                                showDeleteDialog = targetNode
-                            },
-                            onOpenTerminal = onOpenTerminal
-                        )
+                    items(rows, key = { it.key }, contentType = { it::class }) { row ->
+                        when (row) {
+                            is TreeRow.Item -> FileTreeNodeItem(
+                                node = row.node,
+                                depth = row.depth,
+                                isExpanded = row.expanded,
+                                isOpening = openingPath == row.node.path,
+                                activeFilePath = activeFilePath,
+                                onToggleExpand = { path -> treeScope.launch { fileTree.toggle(path) } },
+                                onOpenFile = onOpenFile,
+                                onCreateChildFile = { parentPath, isDir ->
+                                    isNewFolderMode = isDir
+                                    showCreateFileDialog = parentPath
+                                    treeScope.launch { fileTree.expand(parentPath) }
+                                },
+                                onRenameRequested = { targetNode ->
+                                    showRenameDialog = targetNode
+                                },
+                                onDetailsRequested = { targetNode ->
+                                    showDetailsDialog = targetNode
+                                },
+                                onDeleteRequested = { targetNode ->
+                                    showDeleteDialog = targetNode
+                                },
+                                onOpenTerminal = onOpenTerminal
+                            )
+                            is TreeRow.Loading -> AfterDelay { FileTreeNoteRow(depth = row.depth, text = L.common.loading, loading = true) }
+                            is TreeRow.Note -> FileTreeNoteRow(depth = row.depth, text = row.text, isError = row.isError)
+                        }
                     }
                 }
             }
@@ -493,13 +515,13 @@ fun ProjectSidebar(
                     modifier = Modifier.size(28.dp)
                 )
             },
-            title = { Text(if (isNewFolderMode) "Create Folder" else "Create File", fontWeight = FontWeight.Bold) },
+            title = { Text(if (isNewFolderMode) L.ide.projectSidebar.createFolder else L.ide.projectSidebar.createFile, fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = newItemName,
                     onValueChange = { newItemName = it },
-                    label = { Text(if (isNewFolderMode) "Folder Name" else "File Name") },
-                    placeholder = { Text(if (isNewFolderMode) "e.g. components" else "e.g. utils.py") },
+                    label = { Text(if (isNewFolderMode) L.ide.projectSidebar.folderName else L.ide.projectSidebar.fileName) },
+                    placeholder = { Text(if (isNewFolderMode) L.ide.projectSidebar.eGComponents else "e.g. utils.py") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -510,7 +532,7 @@ fun ProjectSidebar(
                         val parent = showCreateFileDialog ?: ""
                         if (newItemName.isNotBlank() && parent.isNotBlank()) {
                             val fullPath = "$parent/${newItemName.trim()}"
-                            expandedPaths = expandedPaths + parent
+                            treeScope.launch { fileTree.expand(parent) }
                             onCreateFile(fullPath, newItemName.trim(), isNewFolderMode)
                             newItemName = ""
                             showCreateFileDialog = null
@@ -519,12 +541,12 @@ fun ProjectSidebar(
                     enabled = newItemName.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = ClaudeTerracotta)
                 ) {
-                    Text("Create")
+                    Text(L.common.create)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCreateFileDialog = null }) {
-                    Text("Cancel")
+                    Text(L.common.cancel)
                 }
             }
         )
@@ -545,7 +567,7 @@ fun ProjectSidebar(
             },
             title = {
                 Text(
-                    text = "Rename ${if (node.isDir) "Folder" else "File"}",
+                    text = L.ide.projectSidebar.renameValue(if (node.isDir) L.ide.projectSidebar.folder else L.ide.projectSidebar.file),
                     fontWeight = FontWeight.Bold
                 )
             },
@@ -553,7 +575,7 @@ fun ProjectSidebar(
                 OutlinedTextField(
                     value = renameInput,
                     onValueChange = { renameInput = it },
-                    label = { Text("New Name") },
+                    label = { Text(L.ide.projectSidebar.newName) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -572,12 +594,12 @@ fun ProjectSidebar(
                     enabled = renameInput.trim().isNotBlank() && renameInput.trim() != node.name,
                     colors = ButtonDefaults.buttonColors(containerColor = ClaudeTerracotta)
                 ) {
-                    Text("Rename")
+                    Text(L.common.rename)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = null }) {
-                    Text("Cancel")
+                    Text(L.common.cancel)
                 }
             }
         )
@@ -603,7 +625,7 @@ fun ProjectSidebar(
             },
             text = {
                 Text(
-                    text = "Are you sure you want to permanently delete \"${node.name}\"? This action cannot be undone.",
+                    text = L.ide.projectSidebar.areYouSureYouWantTo(node.name),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -617,12 +639,12 @@ fun ProjectSidebar(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Delete")
+                    Text(L.common.delete)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = null }) {
-                    Text("Cancel")
+                    Text(L.common.cancel)
                 }
             }
         )
@@ -635,18 +657,59 @@ fun ProjectSidebar(
             path = node.path,
             isDir = node.isDir,
             size = node.size,
-            childCount = if (node.isDir) node.children.size else null,
+            childCount = if (node.isDir) fileTree.childCount(node.path) else null,
             onDismiss = { showDetailsDialog = null }
         )
     }
 }
 
+/** How long the sidebar waits before showing a spinner: most files and folders open faster, and a flash of one feels slow. */
+const val SPINNER_DELAY_MS = 300L
+
+/** Shows [content] only once [SPINNER_DELAY_MS] has passed (nothing, not even its space, before that). */
+@Composable
+private fun AfterDelay(content: @Composable () -> Unit) {
+    var show by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(SPINNER_DELAY_MS)
+        show = true
+    }
+    if (show) content()
+}
+
+/** A note under a folder in the tree: still loading, empty, cut short, or could not be read. */
+@Composable
+private fun FileTreeNoteRow(depth: Int, text: String, loading: Boolean = false, isError: Boolean = false) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .padding(start = (depth * 14 + 24).dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (loading) {
+            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp)
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** One file or folder row. Rows are drawn flat by the sidebar's lazy list: a folder's children are rows of their own. */
 @Composable
 fun FileTreeNodeItem(
     node: FileNode,
     depth: Int,
+    isExpanded: Boolean,
+    isOpening: Boolean,
     activeFilePath: String?,
-    expandedPaths: Set<String>,
     onToggleExpand: (String) -> Unit,
     onOpenFile: (FileNode) -> Unit,
     onCreateChildFile: (parentPath: String, isDir: Boolean) -> Unit,
@@ -657,7 +720,6 @@ fun FileTreeNodeItem(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val isExpanded = expandedPaths.contains(node.path)
     var menuExpanded by remember { mutableStateOf(false) }
     val isActive = activeFilePath == node.path
 
@@ -698,12 +760,16 @@ fun FileTreeNodeItem(
                 )
             } else {
                 Spacer(modifier = Modifier.width(20.dp))
-                Icon(
-                    imageVector = getFileIcon(node.name),
-                    contentDescription = null,
-                    tint = getFileIconColor(node.name),
-                    modifier = Modifier.size(16.dp)
-                )
+                if (isOpening) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp)
+                } else {
+                    Icon(
+                        imageVector = getFileIcon(node.name),
+                        contentDescription = null,
+                        tint = getFileIconColor(node.name),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(6.dp))
@@ -727,7 +793,7 @@ fun FileTreeNodeItem(
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Options",
+                        contentDescription = L.common.options,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(14.dp)
                     )
@@ -743,7 +809,7 @@ fun FileTreeNodeItem(
                 ) {
                     if (node.isDir) {
                         DropdownMenuItem(
-                            text = { Text("New File", fontSize = 13.5.sp) },
+                            text = { Text(L.ide.projectSidebar.newFile, fontSize = 13.5.sp) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.NoteAdd,
@@ -758,7 +824,7 @@ fun FileTreeNodeItem(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("New Folder", fontSize = 13.5.sp) },
+                            text = { Text(L.ide.projectSidebar.newFolder, fontSize = 13.5.sp) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.CreateNewFolder,
@@ -773,7 +839,7 @@ fun FileTreeNodeItem(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Terminal", fontSize = 13.5.sp) },
+                            text = { Text(L.common.terminal, fontSize = 13.5.sp) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Terminal,
@@ -790,7 +856,7 @@ fun FileTreeNodeItem(
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     }
                     DropdownMenuItem(
-                        text = { Text("Rename", fontSize = 13.5.sp) },
+                        text = { Text(L.common.rename, fontSize = 13.5.sp) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.DriveFileRenameOutline,
@@ -806,7 +872,7 @@ fun FileTreeNodeItem(
                     )
                     if (!node.isDir) {
                         DropdownMenuItem(
-                            text = { Text("Share", fontSize = 13.5.sp) },
+                            text = { Text(L.common.share, fontSize = 13.5.sp) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Outlined.Share,
@@ -817,7 +883,7 @@ fun FileTreeNodeItem(
                             },
                             onClick = {
                                 menuExpanded = false
-                                AppToastHelper.showToast("Preparing file share...", ChatToastType.INFO)
+                                AppToastHelper.showToast(L.ide.projectSidebar.preparingFileShare, ChatToastType.INFO)
                                 coroutineScope.launch(Dispatchers.IO) {
                                     FileShareHelper.shareFile(
                                         context = context,
@@ -829,7 +895,7 @@ fun FileTreeNodeItem(
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("Details", fontSize = 13.5.sp) },
+                        text = { Text(L.common.details, fontSize = 13.5.sp) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Info,
@@ -845,7 +911,7 @@ fun FileTreeNodeItem(
                     )
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     DropdownMenuItem(
-                        text = { Text("Delete", color = MaterialTheme.colorScheme.error, fontSize = 13.5.sp) },
+                        text = { Text(L.common.delete, color = MaterialTheme.colorScheme.error, fontSize = 13.5.sp) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.DeleteOutline,
@@ -860,24 +926,6 @@ fun FileTreeNodeItem(
                         }
                     )
                 }
-            }
-        }
-
-        if (node.isDir && isExpanded && node.children.isNotEmpty()) {
-            node.children.forEach { child ->
-                FileTreeNodeItem(
-                    node = child,
-                    depth = depth + 1,
-                    activeFilePath = activeFilePath,
-                    expandedPaths = expandedPaths,
-                    onToggleExpand = onToggleExpand,
-                    onOpenFile = onOpenFile,
-                    onCreateChildFile = onCreateChildFile,
-                    onRenameRequested = onRenameRequested,
-                    onDetailsRequested = onDetailsRequested,
-                    onDeleteRequested = onDeleteRequested,
-                    onOpenTerminal = onOpenTerminal
-                )
             }
         }
     }
@@ -938,8 +986,9 @@ object FileShareHelper {
             if (localFile.exists()) {
                 localFile.copyTo(shareFile, overwrite = true)
             } else {
-                val content = IdeApiClient.readFile(filePath) ?: ""
-                shareFile.writeText(content)
+                // a file only the bridge sees: streamed to the cache byte for byte (never read whole into memory)
+                val r = ai.antigem.data.files.FileExplorerApi.download(filePath, shareFile)
+                if (!r.ok) throw java.io.IOException(r.error ?: "Download failed")
             }
 
             val shareUri = try {
@@ -958,7 +1007,7 @@ object FileShareHelper {
         } catch (e: Exception) {
             Log.e(TAG, "Share failed: ${e.message}", e)
             withContext(Dispatchers.Main) {
-                AppToastHelper.showToast("Share error: ${e.message}", ChatToastType.ERROR)
+                AppToastHelper.showToast(L.ide.projectSidebar.shareErrorMessage(e.message), ChatToastType.ERROR)
             }
         }
     }
@@ -973,13 +1022,13 @@ object FileShareHelper {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val chooser = Intent.createChooser(shareIntent, "Share $fileName").apply {
+            val chooser = Intent.createChooser(shareIntent, L.ide.projectSidebar.shareFilename(fileName)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(chooser)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to launch share chooser: ${e.message}")
-            AppToastHelper.showToast("Could not open share chooser", ChatToastType.ERROR)
+            AppToastHelper.showToast(L.ide.projectSidebar.couldNotOpenShareChooser, ChatToastType.ERROR)
         }
     }
 }
