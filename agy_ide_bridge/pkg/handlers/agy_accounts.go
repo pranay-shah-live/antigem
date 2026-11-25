@@ -124,8 +124,8 @@ func readAgyTokenFile(path string) (map[string]interface{}, error) {
 	return t, nil
 }
 
-// writeFileAtomic writes through a temp file + rename in the same folder, so agy never reads a half-written file.
-func writeFileAtomic(path string, data []byte) error {
+// writeAccountFileAtomic writes through a temp file + rename in the same folder, so agy never reads a half-written file.
+func writeAccountFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -195,7 +195,7 @@ func (h *Handler) writeAgySaved(acc agySavedAccount) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(acc.file, data)
+	return writeAccountFileAtomic(acc.file, data)
 }
 
 // saveLiveLocked saves the signed-in login (updating the copy of the same email). Returns its email.
@@ -378,7 +378,7 @@ func (h *Handler) AgyAccountsHandler(w http.ResponseWriter, r *http.Request) {
 			fail(http.StatusInternalServerError, err.Error())
 			return
 		}
-		if err := writeFileAtomic(h.agyLiveTokenPath(), data); err != nil {
+		if err := writeAccountFileAtomic(h.agyLiveTokenPath(), data); err != nil {
 			fail(http.StatusInternalServerError, err.Error())
 			return
 		}
