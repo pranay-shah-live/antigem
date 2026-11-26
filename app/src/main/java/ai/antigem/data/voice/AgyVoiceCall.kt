@@ -366,8 +366,9 @@ object AgyVoiceCall {
         if (sentToVoice || vm != null) {
             if (s != null) note(s, "Typed: $trimmed")
             _state.update { st ->
+                val nextKey = maxOf(lineKeys.incrementAndGet(), (st.lines.maxOfOrNull { it.key } ?: 0L) + 1L)
                 val nextSeq = (st.lines.lastOrNull()?.seq ?: 0) + 1
-                st.copy(lines = (st.lines + Line(lineKeys.incrementAndGet(), Role.USER, nextSeq, trimmed, interim = false)).takeLast(40))
+                st.copy(lines = (st.lines + Line(nextKey, Role.USER, nextSeq, trimmed, interim = false)).takeLast(40))
             }
             return true
         }
