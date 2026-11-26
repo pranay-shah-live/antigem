@@ -9,19 +9,24 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.WrapText
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DataObject
+import androidx.compose.material.icons.outlined.FormatQuote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -33,7 +38,8 @@ import ai.antigem.i18n.L
 @Composable
 fun RawPayloadDialog(
     payloadJson: String,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onQuote: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var wrapLines by remember { mutableStateOf(true) }
@@ -55,6 +61,7 @@ fun RawPayloadDialog(
 
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
+    var textFieldValue by remember(prettyJson) { mutableStateOf(TextFieldValue(prettyJson)) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -151,12 +158,20 @@ fun RawPayloadDialog(
                     }
 
                     Box(modifier = boxModifier) {
-                        Text(
-                            text = prettyJson,
-                            fontSize = 11.5.sp,
-                            lineHeight = 16.5.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = ai.antigem.theme.AppColors.accentTeal,
+                        BasicTextField(
+                            value = textFieldValue,
+                            onValueChange = { updated ->
+                                // Keep text immutable while allowing native selection handles to move.
+                                textFieldValue = if (updated.text == prettyJson) updated else textFieldValue.copy(selection = updated.selection)
+                            },
+                            readOnly = true,
+                            textStyle = TextStyle(
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = ai.antigem.theme.AppColors.accentTeal
+                            ),
+                            cursorBrush = SolidColor(ClaudeTerracotta),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -170,23 +185,56 @@ fun RawPayloadDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Button(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Raw Payload JSON", prettyJson))
-                            Toast.makeText(context, L.components.rawPayload.formattedJsonCopiedToClipboard, Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = ai.antigem.theme.AppColors.editorPanel),
-                        shape = RoundedCornerShape(8.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ContentCopy,
-                            contentDescription = L.common.copy,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(L.components.rawPayload.copyJson, fontSize = 12.5.sp, color = Color.White)
+                        if (onQuote != null) {
+                            Button(
+                                onClick = {
+                                    val sel = textFieldValue.selection
+                                    if (!sel.collapsed) {
+                                        val selected = prettyJson.substring(sel.min, sel.max).trim()
+                                        if (selected.isNotEmpty()) {
+                                            onQuote(selected)
+                                            onDismiss()
+                                            return@Button
+                                        }
+                                    }
+                                    Toast.makeText(context, "Select text to quote", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = ai.antigem.theme.AppColors.editorPanel),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.FormatQuote,
+                                    contentDescription = "Quote",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Quote", fontSize = 12.5.sp, color = Color.White)
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Raw Payload JSON", prettyJson))
+                                Toast.makeText(context, L.components.rawPayload.formattedJsonCopiedToClipboard, Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ai.antigem.theme.AppColors.editorPanel),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.ContentCopy,
+                                contentDescription = L.common.copy,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(L.components.rawPayload.copyJson, fontSize = 12.5.sp, color = Color.White)
+                        }
                     }
 
                     Button(
