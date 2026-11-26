@@ -8,6 +8,7 @@ import ai.antigem.ui.components.MarkdownBlock
 import ai.antigem.ui.components.parseMarkdownBlocks
 import ai.antigem.ui.components.CodeBlockCache
 import ai.antigem.ui.components.MarkdownTextCache
+import android.util.LruCache
 import java.util.concurrent.ConcurrentHashMap
 import ai.antigem.i18n.L
 
@@ -153,11 +154,12 @@ object StepGroups {
 }
 
 object ChatFeedCache {
-    val cache = ConcurrentHashMap<String, List<ChatFeedItem>>()
+    private const val MAX_CACHE_ENTRIES = 800
+    val cache = LruCache<String, List<ChatFeedItem>>(MAX_CACHE_ENTRIES)
 
     fun getOrParse(msg: ChatMessage): List<ChatFeedItem> {
         val cacheKey = "${msg.id}_${msg.content.hashCode()}_${msg.toolCalls.hashCode()}_${msg.thoughtText?.hashCode() ?: 0}_${msg.tokenUsage?.hashCode() ?: 0}"
-        val cached = cache[cacheKey]
+        val cached = cache.get(cacheKey)
         if (cached != null) return cached
 
         val msgItems = mutableListOf<ChatFeedItem>()
@@ -200,7 +202,7 @@ object ChatFeedCache {
             }
             else -> {}
         }
-        cache[cacheKey] = msgItems
+        cache.put(cacheKey, msgItems)
         return msgItems
     }
 
