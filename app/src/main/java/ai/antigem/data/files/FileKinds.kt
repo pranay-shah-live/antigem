@@ -171,4 +171,34 @@ object FileKinds {
         }
         return if (v >= 100) String.format(Locale.getDefault(), "%.0f %s", v, units[i]) else String.format(Locale.getDefault(), "%.1f %s", v, units[i])
     }
+
+    /**
+     * Builds an ACTION_VIEW chooser for [uri]. For APK files, also attaches
+     * ACTION_INSTALL_PACKAGE via EXTRA_INITIAL_INTENTS so the native Android
+     * system package installer appears alongside third-party APK handlers.
+     */
+    @Suppress("DEPRECATION")
+    fun createFileViewChooser(
+        uri: android.net.Uri,
+        mimeType: String,
+        title: CharSequence?,
+        newTask: Boolean = false
+    ): android.content.Intent {
+        val resolvedMime = mimeType.ifBlank { "*/*" }
+        val viewIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, resolvedMime)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (newTask) addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val chooser = android.content.Intent.createChooser(viewIntent, title)
+        if (resolvedMime == "application/vnd.android.package-archive") {
+            val installIntent = android.content.Intent(android.content.Intent.ACTION_INSTALL_PACKAGE).apply {
+                data = uri
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (newTask) addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            chooser.putExtra(android.content.Intent.EXTRA_INITIAL_INTENTS, arrayOf(installIntent))
+        }
+        return chooser
+    }
 }

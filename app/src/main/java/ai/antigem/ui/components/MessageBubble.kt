@@ -1257,11 +1257,13 @@ private fun UserMessageDocumentItem(
                         } else {
                             try {
                                 val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(uri, attachment.mimeType ?: "*/*")
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(intent, L.components.messageBubble.openName(attachment.name)))
+                                context.startActivity(
+                                    ai.antigem.data.files.FileKinds.createFileViewChooser(
+                                        uri = uri,
+                                        mimeType = attachment.mimeType ?: "*/*",
+                                        title = L.components.messageBubble.openName(attachment.name)
+                                    )
+                                )
                             } catch (e: Exception) {
                                 Toast.makeText(context, L.components.messageBubble.cannotOpenMessage(e.message), Toast.LENGTH_SHORT).show()
                             }
@@ -1291,11 +1293,13 @@ private fun UserMessageDocumentItem(
                             else -> null
                         }
                         if (uri != null) {
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, attachment.mimeType ?: "*/*")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(intent, L.components.messageBubble.openName(attachment.name)))
+                            context.startActivity(
+                                ai.antigem.data.files.FileKinds.createFileViewChooser(
+                                    uri = uri,
+                                    mimeType = attachment.mimeType ?: "*/*",
+                                    title = L.components.messageBubble.openName(attachment.name)
+                                )
+                            )
                         } else {
                             Toast.makeText(context, attachment.name, Toast.LENGTH_SHORT).show()
                         }

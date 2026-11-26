@@ -1133,7 +1133,13 @@ fun ChatInputBar(
                                                                     setDataAndType(uri, att.mimeType ?: "*/*")
                                                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                                                 }
-                                                                context.startActivity(Intent.createChooser(intent, L.components.chatInputBar.openName(att.name)))
+                                                                context.startActivity(
+                                                                    ai.antigem.data.files.FileKinds.createFileViewChooser(
+                                                                        uri = uri,
+                                                                        mimeType = att.mimeType ?: "*/*",
+                                                                        title = L.components.chatInputBar.openName(att.name)
+                                                                    )
+                                                                )
                                                             } else {
                                                                 Toast.makeText(context, att.name, Toast.LENGTH_SHORT).show()
                                                             }

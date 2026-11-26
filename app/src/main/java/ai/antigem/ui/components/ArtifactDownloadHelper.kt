@@ -65,12 +65,13 @@ object ArtifactDownloadHelper {
 
     private fun openFile(context: Context, uri: Uri, mimeType: String) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, mimeType.ifBlank { "*/*" })
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(Intent.createChooser(intent, L.components.artifactDownloadHelper.openFile))
+            val chooser = ai.antigem.data.files.FileKinds.createFileViewChooser(
+                uri = uri,
+                mimeType = mimeType,
+                title = L.components.artifactDownloadHelper.openFile,
+                newTask = true
+            )
+            context.startActivity(chooser)
         } catch (e: Exception) {
             Toast.makeText(context, L.components.artifactDownloadHelper.noAppFoundToOpenFile, Toast.LENGTH_SHORT).show()
         }
