@@ -2599,8 +2599,10 @@ fun ChatScreen(
                     }
 
                     // `/plu:` browses custom AntiGem plugins and their skills; custom commands join the normal list
-                    val customCommands = ai.antigem.data.remote.CustomSlashCommands.commands.toList()
-                    val installedPlugins = ai.antigem.ui.browser.BrowserExtensionManager.instance.extensions.toList()
+                    // Only copy these while the menu is open: a fresh list on every stream frame would change the
+                    // remember key below and rebuild the whole suggestion list (and its base commands) each time.
+                    val customCommands = if (isSlashActive) ai.antigem.data.remote.CustomSlashCommands.commands.toList() else emptyList()
+                    val installedPlugins = if (isSlashActive) ai.antigem.ui.browser.BrowserExtensionManager.instance.extensions.toList() else emptyList()
                     val slashSuggestions = remember(slashQuery, effectiveSlashCommands, isSlashActive, customCommands, installedPlugins) {
                         if (!isSlashActive) emptyList()
                         else if (slashQuery.startsWith("plu:", ignoreCase = true)) ai.antigem.data.remote.PromptExpansion.pluginSuggestions(slashQuery.substring(4))
