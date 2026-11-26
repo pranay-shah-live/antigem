@@ -1,12 +1,13 @@
 {
-  "version_code": 2050006,
-  "version_name": "F2.0.5-update5",
+  "version_code": 2050007,
+  "version_name": "F2.0.5-update6",
   "min_supported_version_code": 2,
   "changelog": [
-    "Added Settings Search: top-bar icon toggling real-time search across all settings sections and sub-pages.",
-    "Added Two-Level Jarvis Voice Selection: choose language/locale first, then pick specific voice models and variants.",
-    "Added Background-Only Task Notifications: completion alerts only trigger when app is backgrounded, using the app icon.",
-    "Added Expandable Quote Preview: drag handle pill in the chat input bar to expand long quotes up to 220dp."
+    "Native Package Installer Support: include Android system package installer in APK chooser alongside third-party installers.",
+    "Partial Text Quoting: support quoting highlighted text in Formatted select mode without overriding clipboard.",
+    "Clickable File Paths: inline code file paths in chat messages now open files directly on tap.",
+    "Crash Diagnostics & Crash Buddy: interactive crash screen with event breadcrumbs and diagnostics.",
+    "Submodule Cleanup: removed unused heavy submodules and cleaned up home screen widget overhead."
   ],
   "is_critical": false
 }
