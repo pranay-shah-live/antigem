@@ -476,19 +476,100 @@ fun JarvisSettingsSectionPage(page: JarvisSettingsPage, cardBg: Color, cardBorde
                     val voice by P.ttsVoice.state.collectAsState()
                     val language by P.ttsLanguage.state.collectAsState()
                     if (engine == "android") {
-                        var voices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
-                        var menu by remember { mutableStateOf(false) }
-                        LaunchedEffect(Unit) { voices = runCatching { JarvisVoice.deviceVoices() }.getOrDefault(emptyList()) }
+                        var voiceInfos by remember { mutableStateOf<List<JarvisVoice.DeviceVoiceInfo>>(emptyList()) }
+                        LaunchedEffect(Unit) { voiceInfos = runCatching { JarvisVoice.deviceVoiceInfos() }.getOrDefault(emptyList()) }
+
+                        // Group available voices by locale display name
+                        val languageGroups = remember(voiceInfos) {
+                            voiceInfos.groupBy { it.localeDisplayName }.toSortedMap()
+                        }
+
+                        // Determine currently selected language from voice or saved language tag
+                        val currentVoiceInfo = remember(voice, voiceInfos) {
+                            voiceInfos.firstOrNull { it.name == voice }
+                        }
+                        var selectedLanguageName by remember(currentVoiceInfo, language, languageGroups) {
+                            mutableStateOf(
+                                currentVoiceInfo?.localeDisplayName
+                                    ?: languageGroups.entries.firstOrNull { (_, list) -> list.any { it.localeTag.equals(language, true) } }?.key
+                                    ?: ""
+                            )
+                        }
+
+                        var langMenu by remember { mutableStateOf(false) }
+                        var voiceMenu by remember { mutableStateOf(false) }
+
+                        // 1. Language Dropdown
                         Box {
-                            OutlinedButton(onClick = { menu = true }) { Text(L.jarvis.settings.voiceValue((voices.firstOrNull { it.first == voice }?.second ?: L.jarvis.settings.systemDefault))) }
-                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(text = { Text(L.jarvis.settings.systemDefault) }, onClick = { P.ttsVoice.set(""); menu = false })
-                                voices.take(80).forEach { (id, label) ->
-                                    DropdownMenuItem(text = { Text(label, fontSize = 13.sp) }, onClick = { P.ttsVoice.set(id); menu = false })
+                            OutlinedButton(onClick = { langMenu = true }) {
+                                Text(
+                                    if (selectedLanguageName.isNotBlank()) "Language: $selectedLanguageName"
+                                    else "Language: ${L.jarvis.settings.systemDefault}"
+                                )
+                            }
+                            DropdownMenu(expanded = langMenu, onDismissRequest = { langMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(L.jarvis.settings.systemDefault) },
+                                    onClick = {
+                                        selectedLanguageName = ""
+                                        P.ttsVoice.set("")
+                                        P.ttsLanguage.set("")
+                                        langMenu = false
+                                    }
+                                )
+                                languageGroups.keys.forEach { langName ->
+                                    DropdownMenuItem(
+                                        text = { Text(langName, fontSize = 13.sp) },
+                                        onClick = {
+                                            selectedLanguageName = langName
+                                            val firstInLang = languageGroups[langName]?.firstOrNull()
+                                            if (firstInLang != null) {
+                                                P.ttsLanguage.set(firstInLang.localeTag)
+                                                P.ttsVoice.set("") // Default for that language
+                                            }
+                                            langMenu = false
+                                        }
+                                    )
                                 }
                             }
                         }
-                        JField(L.jarvis.settings.languageOptionalEGEnUs, language) { P.ttsLanguage.set(it) }
+
+                        // 2. Voice / Variant Dropdown for Selected Language
+                        val availableVoicesInLang = remember(selectedLanguageName, languageGroups) {
+                            if (selectedLanguageName.isNotBlank()) languageGroups[selectedLanguageName].orEmpty()
+                            else emptyList()
+                        }
+
+                        if (availableVoicesInLang.isNotEmpty()) {
+                            Box {
+                                OutlinedButton(onClick = { voiceMenu = true }) {
+                                    val currentLabel = availableVoicesInLang.firstOrNull { it.name == voice }?.let {
+                                        "${it.voiceVariant} (${it.name})"
+                                    } ?: "Default for $selectedLanguageName"
+                                    Text("Voice: $currentLabel")
+                                }
+                                DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Default for $selectedLanguageName") },
+                                        onClick = {
+                                            P.ttsVoice.set("")
+                                            voiceMenu = false
+                                        }
+                                    )
+                                    availableVoicesInLang.forEach { info ->
+                                        val label = if (info.voiceVariant.isNotBlank()) "${info.voiceVariant} · ${info.name}" else info.name
+                                        DropdownMenuItem(
+                                            text = { Text(label, fontSize = 13.sp) },
+                                            onClick = {
+                                                P.ttsVoice.set(info.name)
+                                                P.ttsLanguage.set(info.localeTag)
+                                                voiceMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         val key by P.ttsApiKey.state.collectAsState()
                         JField(L.common.apiKey, key, secret = true) { P.ttsApiKey.set(it) }

@@ -275,6 +275,34 @@ object JarvisVoice {
         }
     }
 
+    /** Information about an installed voice. */
+    data class DeviceVoiceInfo(
+        val name: String,
+        val localeTag: String,
+        val localeDisplayName: String,
+        val voiceVariant: String
+    )
+
+    /** Voices installed on the device with structured locale info, for the settings screen. */
+    suspend fun deviceVoiceInfos(): List<DeviceVoiceInfo> {
+        val engine = ensureTts() ?: return emptyList()
+        return withContext(Dispatchers.Default) {
+            runCatching {
+                engine.voices.orEmpty().map { v ->
+                    val disp = v.locale.displayName.ifBlank { v.locale.toLanguageTag() }
+                    val variant = v.name.substringAfter(v.locale.toLanguageTag().lowercase() + "-", v.name)
+                        .removePrefix(v.locale.language + "-")
+                    DeviceVoiceInfo(
+                        name = v.name,
+                        localeTag = v.locale.toLanguageTag(),
+                        localeDisplayName = disp,
+                        voiceVariant = variant
+                    )
+                }.sortedBy { it.localeDisplayName }
+            }.getOrDefault(emptyList())
+        }
+    }
+
     /** Voices installed on the device, for the settings screen. */
     suspend fun deviceVoices(): List<Pair<String, String>> {
         val engine = ensureTts() ?: return emptyList()
