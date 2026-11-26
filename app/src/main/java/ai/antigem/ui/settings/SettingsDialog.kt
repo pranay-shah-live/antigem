@@ -366,6 +366,8 @@ fun SettingsDialog(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var currentSection by remember { mutableStateOf(initialSection ?: if (initialClaudePage != null && claude != null) SettingsSection.CLAUDE_PAGE else SettingsSection.MAIN) }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     // the Ubuntu chroot shown on its page (null: the one in use)
     var chrootManagePath by remember { mutableStateOf<String?>(null) }
     var claudePage by remember { mutableStateOf(initialClaudePage ?: ai.antigem.ui.claude.ClaudeSettingsPage.ACCOUNT) }
@@ -461,6 +463,16 @@ fun SettingsDialog(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        searchOpen = !searchOpen
+                        if (!searchOpen) searchQuery = ""
+                    }) {
+                        Icon(
+                            imageVector = if (searchOpen) Icons.Outlined.Close else Icons.Outlined.Search,
+                            contentDescription = "Search settings",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     TextButton(onClick = onDismiss) {
                         Text(
                             text = L.common.done,
@@ -475,11 +487,64 @@ fun SettingsDialog(
                 )
             )
 
+            if (searchOpen) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search settings…", fontSize = 14.sp) },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Outlined.Search, null, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Outlined.Close, "Clear", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+
             HorizontalDivider(
                 thickness = 0.8.dp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
             )
 
+            val searchResults = remember(searchQuery, searchOpen) {
+                if (searchOpen && searchQuery.isNotBlank()) SettingsSearchIndex.search(searchQuery) else emptyList()
+            }
+            if (searchOpen && searchQuery.isNotBlank()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (searchResults.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "No matching settings",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                fontSize = 14.sp
+                            )
+                        }
+                    } else {
+                        SettingsRowList(
+                            groups = listOf(searchResults.map { entry ->
+                                SettingsRowItem(
+                                    icon = entry.icon,
+                                    tint = entry.tint,
+                                    title = entry.title,
+                                    value = entry.subtitle.takeIf { it.isNotBlank() }
+                                ) {
+                                    currentSection = entry.section
+                                    searchOpen = false
+                                    searchQuery = ""
+                                }
+                            }),
+                            cardBg = cardBg
+                        )
+                    }
+                }
+            } else {
             // Animated Screen Content
             AnimatedContent(
                 targetState = currentSection,
@@ -892,6 +957,7 @@ fun SettingsDialog(
                         cardBorder = cardBorder
                     )
                 }
+            }
             }
         }
     }
