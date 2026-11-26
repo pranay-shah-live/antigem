@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
         ai.antigem.ui.jarvis.JarvisFloating.attach(this)
         ai.antigem.data.agent.ChatCompletionMonitor.start(application, chatViewModel)
         ai.antigem.data.memory.MemorySync.start(chatViewModel)
+        ai.antigem.data.search.ChatSearchCache.start(chatViewModel)
         handleIncomingFileIntent(intent)
         handleJarvisIntent(intent)
         handleVoiceCallIntent(intent)

@@ -141,6 +141,8 @@ fun ChatHistoryDrawer(
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    // user prompts finish loading in the background: recompose the filtered list as they arrive
+    val searchIndexRevision by ai.antigem.data.search.ChatSearchCache.revision.collectAsState()
     var isSearchActive by remember { mutableStateOf(false) }
     var showFullSearchDialog by remember { mutableStateOf(false) }
     var instanceToTerminate by remember {
@@ -195,14 +197,15 @@ fun ChatHistoryDrawer(
         }
         byId.values.filter(::isArchived).map { it.id }.toSet()
     }
-    val filtered = remember(conversations, jarvisConversations, searchQuery, agentFilter, jarvisFilter, showArchived, archivedIds) {
+    val filtered = remember(conversations, jarvisConversations, searchQuery, agentFilter, jarvisFilter, showArchived, archivedIds, searchIndexRevision) {
         val byAgent = (if (jarvisFilter) jarvisConversations
         else agentFilter?.let { a -> conversations.filter { it.agent == a } } ?: conversations)
             .filter { (it.id in archivedIds) == showArchived }
         if (searchQuery.isBlank()) byAgent
         else byAgent.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
-                    (it.subagentRole != null && it.subagentRole.contains(searchQuery, ignoreCase = true))
+                    (it.subagentRole != null && it.subagentRole.contains(searchQuery, ignoreCase = true)) ||
+                    ai.antigem.data.search.ChatSearchCache.matches(it.id, searchQuery)
         }
     }
 
@@ -1082,6 +1085,8 @@ fun ChatHistoryDrawer(
                                         depth = item.depth,
                                         displayName = if (item.depth > 0) conv.subagentRole?.takeIf { it.isNotBlank() }
                                             ?: conv.title else conv.title,
+                                        promptHit = if (searchQuery.isNotBlank())
+                                            ai.antigem.data.search.ChatSearchCache.snippet(conv.id, searchQuery) else null,
                                         subagents = item.subagents,
                                         isSubagentsExpanded = item.isExpanded,
                                         onToggleSubagents = if (item.subagents.isNotEmpty()) {
@@ -1204,6 +1209,8 @@ fun ChatHistoryDrawer(
                                             depth = item.depth,
                                             displayName = if (item.depth > 0) conv.subagentRole?.takeIf { it.isNotBlank() }
                                                 ?: conv.title else conv.title,
+                                            promptHit = if (searchQuery.isNotBlank())
+                                                ai.antigem.data.search.ChatSearchCache.snippet(conv.id, searchQuery) else null,
                                             subagents = item.subagents,
                                             isSubagentsExpanded = item.isExpanded,
                                             onToggleSubagents = if (item.subagents.isNotEmpty()) {
@@ -1604,7 +1611,9 @@ private fun ChatHistoryItemRow(
     isPinned: Boolean = false,
     /** Pins / unpins from the ⋮ menu; null (sub-agent rows) hides the item. */
     onTogglePin: (() -> Unit)? = null,
-    claudeActions: ClaudeDrawerActions? = null
+    claudeActions: ClaudeDrawerActions? = null,
+    /** The user prompt that matched the sidebar search, shown under the title. */
+    promptHit: String? = null
 ) {
     val isSubagent = depth > 0
     val startPadding = if (isSubagent) (12 + (depth * 14)).dp else 0.dp
@@ -1691,76 +1700,89 @@ private fun ChatHistoryItemRow(
             Spacer(modifier = Modifier.width(10.dp))
         }
 
-        Row(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = displayName,
-                fontSize = if (isSubagent) 12.8.sp else 13.5.sp,
-                fontWeight = if (isSelected) FontWeight.SemiBold else if (isSubagent) FontWeight.Medium else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (isSubagent && isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-
+        Column(modifier = Modifier.weight(1f)) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (subagents.isNotEmpty()) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isSubagentsExpanded) ClaudeTerracotta.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(
-                            alpha = 0.7f
-                        ),
-                        border = BorderStroke(
-                            1.dp,
-                            if (isSubagentsExpanded) ClaudeTerracotta.copy(alpha = 0.4f) else Color.Transparent
-                        ),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onToggleSubagents?.invoke() }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                Text(
+                    text = displayName,
+                    fontSize = if (isSubagent) 12.8.sp else 13.5.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else if (isSubagent) FontWeight.Medium else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isSubagent && isSelected) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (subagents.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSubagentsExpanded) ClaudeTerracotta.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(
+                                alpha = 0.7f
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSubagentsExpanded) ClaudeTerracotta.copy(alpha = 0.4f) else Color.Transparent
+                            ),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onToggleSubagents?.invoke() }
                         ) {
-                            Text(
-                                text = "${subagents.size}",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (isSubagentsExpanded) ClaudeTerracotta else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Icon(
-                                imageVector = if (isSubagentsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = if (isSubagentsExpanded) L.drawer.chatHistoryDrawer.collapseSubagents else L.drawer.chatHistoryDrawer.expandSubagents,
-                                tint = if (isSubagentsExpanded) ClaudeTerracotta else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(13.dp)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${subagents.size}",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSubagentsExpanded) ClaudeTerracotta else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = if (isSubagentsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (isSubagentsExpanded) L.drawer.chatHistoryDrawer.collapseSubagents else L.drawer.chatHistoryDrawer.expandSubagents,
+                                    tint = if (isSubagentsExpanded) ClaudeTerracotta else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
                         }
                     }
-                }
 
-                if (isPinned) {
-                    Icon(
-                        imageVector = Icons.Outlined.PushPin,
-                        contentDescription = L.drawer.chatHistoryDrawer.pinned,
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                        modifier = Modifier.size(12.dp)
-                    )
+                    if (isPinned) {
+                        Icon(
+                            imageVector = Icons.Outlined.PushPin,
+                            contentDescription = L.drawer.chatHistoryDrawer.pinned,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                    val timeStr = formatRelativeTime(conv.updatedAt)
+                    if (timeStr.isNotBlank()) {
+                        Text(
+                            text = timeStr,
+                            fontSize = if (isSubagent) 10.5.sp else 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                        )
+                    }
                 }
-                val timeStr = formatRelativeTime(conv.updatedAt)
-                if (timeStr.isNotBlank()) {
-                    Text(
-                        text = timeStr,
-                        fontSize = if (isSubagent) 10.5.sp else 11.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                    )
-                }
+            }
+
+            if (promptHit != null) {
+                Text(
+                    text = "\u201C$promptHit\u201D",
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    modifier = Modifier.padding(top = 1.dp)
+                )
             }
         }
 

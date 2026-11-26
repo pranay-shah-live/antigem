@@ -546,6 +546,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         ai.antigem.data.jarvis.JarvisController.onChatDeleted(id)
         // Agent memory: its history file goes too (memories it saved stay)
         ai.antigem.data.memory.MemorySync.onChatDeleted(id)
+        ai.antigem.data.search.ChatSearchCache.onChatDeleted(id)
         // its home-screen shortcut is greyed out, and it leaves the app icon's menu
         ai.antigem.data.homescreen.HomeShortcuts.onChatDeleted(getApplication(), id)
     }
@@ -600,6 +601,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             else listOf(typed, ai.antigem.data.files.AttachedFiles.block(refs)).filter { it.isNotBlank() }.joinToString("\n\n")
         // a Jarvis chat on screen: its message carries Jarvis' hidden note (or goes to the voice Jarvis chat as a typed turn)
         val intercepted = (if (jarvis.isAttached) jarvis.interceptScreenMessage(chatId, expanded) else expanded) ?: return
+        // the sidebar searches the user's own words: index them at send time (before the model sees expansions)
+        ai.antigem.data.search.ChatSearchCache.onPromptSent(chatId, content)
         rememberCopies(chatId, refs)
         // a normal chat (a Jarvis chat carries its own guide instead): the app's global context goes in front
         val normal = intercepted === expanded
