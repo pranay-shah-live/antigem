@@ -1,8 +1,9 @@
 {
-  "version_code": 2050003,
-  "version_name": "F2.0.5-update2",
+  "version_code": 2050004,
+  "version_name": "F2.0.5-update3",
   "min_supported_version_code": 2,
   "changelog": [
+    "Performance: this build is no longer debuggable, so Android compiles it at install; the chat debug log spam, the telemetry retry storm and the slash-suggestion rebuild on every stream frame are gone, making chat scrolling and replies smoother.",
     "Search: the sidebar now finds chats by the prompts you typed, and shows the matching prompt under the chat title. Replies, thinking, tool calls and generated code are never indexed.",
     "Pets: Settings → Pets with Gemmy and 7 friends (Kitsu, Frost, Beep, Mochi, Cinder, Mist, Lotl), each with its own reactions, signature move and favourite treat.",
     "Agent control: on/off switches for each skill, MCP server and plugin of Antigravity, Claude Code, Codex and OpenCode.",
