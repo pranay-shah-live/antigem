@@ -1,13 +1,12 @@
 {
-  "version_code": 2050005,
-  "version_name": "F2.0.5-update4",
+  "version_code": 2050006,
+  "version_name": "F2.0.5-update5",
   "min_supported_version_code": 2,
   "changelog": [
-    "Merged upstream 2.0.5-beta.7: background-thread chat list building, scroll/generation lag fixes, Agy profile account switcher, Claude subagent rename/share/delete, and long-chat RAM optimization.",
-    "Added Quote Selected Text from the Markdown/Raw Payload dialog into the chat input bar.",
-    "Added Type command input to the Agy Voice Call overlay (wired to live UserTranscript) and moved Open to the top-right.",
-    "Removed expensive per-frame 16dp shadow on the Floating Chat overlay root for smoother dragging and typing.",
-    "Includes F2.0.5-update3 performance improvements (bounded feed cache, search indexing optimization, AOT install compilation)."
+    "Added Settings Search: top-bar icon toggling real-time search across all settings sections and sub-pages.",
+    "Added Two-Level Jarvis Voice Selection: choose language/locale first, then pick specific voice models and variants.",
+    "Added Background-Only Task Notifications: completion alerts only trigger when app is backgrounded, using the app icon.",
+    "Added Expandable Quote Preview: drag handle pill in the chat input bar to expand long quotes up to 220dp."
   ],
   "is_critical": false
 }
