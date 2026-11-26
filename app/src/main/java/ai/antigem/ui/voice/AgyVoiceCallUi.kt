@@ -49,13 +49,20 @@ import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.ClosedCaptionDisabled
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -175,6 +182,8 @@ private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgy
     val context = LocalContext.current
     val voice = AgyVoicePreferences.voiceOf(st.voice)
     val captionsOn by AgyVoicePreferences.captions.collectAsState()
+    var showTypeInput by remember { mutableStateOf(false) }
+    var typedCommand by remember { mutableStateOf("") }
     val clock = rememberCallClock(st.connectedAt)
     var showVoices by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
@@ -875,6 +884,8 @@ fun AgyVoiceFloatingPanel(
     if (!st.active) return
     val voice = AgyVoicePreferences.voiceOf(st.voice)
     val captionsOn by AgyVoicePreferences.captions.collectAsState()
+    var showTypeInput by remember { mutableStateOf(false) }
+    var typedCommand by remember { mutableStateOf("") }
     val clock = rememberCallClock(st.connectedAt)
     val minimize by rememberUpdatedState(onMinimize)
     val failed = st.phase == Phase.FAILED
@@ -941,8 +952,8 @@ fun AgyVoiceFloatingPanel(
                             }
                         }
                     }
-                    IconButton(onClick = onHide) {
-                        Icon(Icons.Rounded.VisibilityOff, L.voice.agyVoiceCallUi.hideForThisCall, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(20.dp))
+                    IconButton(onClick = onOpenApp) {
+                        Icon(Icons.AutoMirrored.Rounded.OpenInNew, L.common.open, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
                     }
                 }
                 // ---- status
@@ -978,6 +989,63 @@ fun AgyVoiceFloatingPanel(
                 }
                 // ---- controls
                 if (!failed) {
+                    if (showTypeInput) {
+                        Spacer(Modifier.height(8.dp))
+                        val sendTyped = {
+                            if (AgyVoiceCall.sendText(typedCommand)) {
+                                typedCommand = ""
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(24.dp),
+                            color = Color.White.copy(alpha = 0.08f),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    if (typedCommand.isEmpty()) {
+                                        Text(
+                                            text = "Type a command to Gemini...",
+                                            color = Color.White.copy(alpha = 0.45f),
+                                            fontSize = 13.5.sp
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = typedCommand,
+                                        onValueChange = { typedCommand = it },
+                                        singleLine = true,
+                                        textStyle = TextStyle(color = Color.White, fontSize = 13.5.sp),
+                                        cursorBrush = SolidColor(rgb(voice.core)),
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                        keyboardActions = KeyboardActions(onSend = { sendTyped() }),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Surface(
+                                    onClick = { sendTyped() },
+                                    shape = CircleShape,
+                                    color = if (typedCommand.isNotBlank()) rgb(voice.core) else Color.White.copy(alpha = 0.14f),
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.Send,
+                                            contentDescription = "Send",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                         RoundControl(if (st.muted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (st.muted) L.common.unmute else L.common.mute, active = st.muted) { AgyVoiceCall.toggleMute() }
@@ -985,7 +1053,7 @@ fun AgyVoiceFloatingPanel(
                         RoundControl(if (captionsOn) Icons.Rounded.ClosedCaption else Icons.Rounded.ClosedCaptionDisabled, L.voice.agyVoiceCallUi.captions, active = captionsOn) {
                             AgyVoicePreferences.setCaptions(!captionsOn)
                         }
-                        RoundControl(Icons.AutoMirrored.Rounded.OpenInNew, L.common.open, active = false) { onOpenApp() }
+                        RoundControl(Icons.Rounded.Keyboard, "Type", active = showTypeInput) { showTypeInput = !showTypeInput }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Surface(onClick = { AgyVoiceCall.end() }, shape = CircleShape, color = CallRed, modifier = Modifier.size(56.dp)) {
                                 Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.CallEnd, L.voice.agyVoiceCallUi.endCall, tint = Color.White, modifier = Modifier.size(26.dp)) }

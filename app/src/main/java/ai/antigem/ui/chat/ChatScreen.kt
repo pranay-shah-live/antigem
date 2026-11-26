@@ -378,6 +378,7 @@ fun ChatScreen(
     val isLocalStopped = serverStatus is ai.antigem.data.local.LocalServerStatus.Stopped
     val isLocalError = serverStatus is ai.antigem.data.local.LocalServerStatus.Error
     var showRawPayloadDialog by remember { mutableStateOf<String?>(null) }
+    var quotedReplyText by remember { mutableStateOf<String?>(null) }
     var showChatTelemetryDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     // an error card's "Reconnect in Settings" (an OpenCode account the provider rejected)
@@ -3048,7 +3049,14 @@ fun ChatScreen(
                         if (appCmd != null) {
                             handleClaudeCommand(appCmd)
                         } else {
-                            viewModel.sendMessage(text)
+                            val finalMessage = if (!quotedReplyText.isNullOrBlank()) {
+                                val quotedBlock = quotedReplyText!!.trim().lines().joinToString("\n") { "> $it" }
+                                "$quotedBlock\n\n$text"
+                            } else {
+                                text
+                            }
+                            viewModel.sendMessage(finalMessage)
+                            quotedReplyText = null
                             userSentMessageTrigger++
                         }
                         viewModel.clearDraft(activeConversationKey)
@@ -3073,6 +3081,8 @@ fun ChatScreen(
                     focusRequester = chatInputFocusRequester,
                     queuedMessages = queuedMessages,
                     onSendQueuedNow = { viewModel.sendQueuedNow(it) },
+                    quotedText = quotedReplyText,
+                    onClearQuote = { quotedReplyText = null },
                     onDeleteQueued = { viewModel.deleteQueued(it) },
                     onStartVoiceCall = if (isAgyChat) onStartVoiceCall else null,
                     voiceCallActive = voiceCall.active
@@ -3755,7 +3765,11 @@ fun ChatScreen(
     if (showRawPayloadDialog != null) {
         RawPayloadDialog(
             payloadJson = showRawPayloadDialog!!,
-            onDismiss = { showRawPayloadDialog = null }
+            onDismiss = { showRawPayloadDialog = null },
+            onQuote = { selected ->
+                quotedReplyText = selected
+                chatInputFocusRequester.requestFocus()
+            }
         )
     }
 

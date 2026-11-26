@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FormatQuote
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -190,6 +191,8 @@ fun ChatInputBar(
     queuedMessages: List<ai.antigem.domain.model.QueuedMessage> = emptyList(),
     onSendQueuedNow: (String) -> Unit = {},
     onDeleteQueued: (String) -> Unit = {},
+    quotedText: String? = null,
+    onClearQuote: () -> Unit = {},
     /** Antigravity chats: start a live voice call with the agent (null = no call button). */
     onStartVoiceCall: (() -> Unit)? = null,
     /** A voice call is running (the call button lights up and opens it). */
@@ -629,6 +632,54 @@ fun ChatInputBar(
                 onDelete = onDeleteQueued,
                 modifier = Modifier.padding(bottom = 6.dp)
             )
+
+            if (!quotedText.isNullOrBlank()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = ai.antigem.theme.AppColors.card,
+                    border = BorderStroke(
+                        1.dp,
+                        if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.FormatQuote,
+                            contentDescription = "Quoted reply",
+                            tint = ClaudeTerracotta,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = quotedText.trim(),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = onClearQuote,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear quote",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
 
             // Claude-style unified rounded input card
             Surface(

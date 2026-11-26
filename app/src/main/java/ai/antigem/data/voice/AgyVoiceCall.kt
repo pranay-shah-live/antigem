@@ -346,6 +346,29 @@ object AgyVoiceCall {
         s.send(VoiceClientMessage(settings_update = VoiceClientMessage.SettingsUpdate(plan_model = m)))
     }
 
+    fun sendText(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+        val s = session ?: return false
+        val sent = s.send(
+            VoiceClientMessage(
+                user_transcript = VoiceClientMessage.UserTranscript(
+                    text = trimmed,
+                    is_final = true
+                )
+            )
+        )
+        if (sent) {
+            note(s, "Typed: $trimmed")
+            _state.update { st ->
+                val nextKey = (st.lines.lastOrNull()?.key ?: 0L) + 1L
+                val nextSeq = (st.lines.lastOrNull()?.seq ?: 0) + 1
+                st.copy(lines = (st.lines + Line(nextKey, Role.USER, nextSeq, trimmed, interim = false)).takeLast(40))
+            }
+        }
+        return sent
+    }
+
     // ------------------------------------------------------------------------------------------------ hub
 
     private sealed class Health {

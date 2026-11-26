@@ -28,7 +28,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -138,7 +137,6 @@ fun FloatingChatWindow(
         Column(
             Modifier
                 .fillMaxSize()
-                .shadow(16.dp, windowShape)
                 .clip(windowShape)
                 .background(MaterialTheme.colorScheme.background)
                 .border(
