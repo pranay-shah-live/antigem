@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * User-prompt search for the sidebar, kept small on purpose.
@@ -42,6 +43,7 @@ object ChatSearchCache {
     private const val MAX_CHARS_PER_CHAT = 50_000
     private const val SNIPPET_BEFORE = 40
     private const val SNIPPET_AFTER = 90
+    private val whitespaceRegex = Regex("\\s+")
 
     private data class Entry(
         val updatedAt: Long,
@@ -62,6 +64,7 @@ object ChatSearchCache {
     private var started = false
     private var vm: ChatViewModel? = null
     @Volatile private var pending: List<Conversation>? = null
+    private val pendingDirty = AtomicBoolean(false)
 
     @Synchronized
     fun start(viewModel: ChatViewModel) {
@@ -77,13 +80,17 @@ object ChatSearchCache {
                     .onFailure { Log.w(TAG, "could not index ${conv.id}: ${it.message}") }
             }
         }
-        // a new list only updates [pending]; the worker below picks it up after a quiet moment
+        // a new list updates [pending] and marks it dirty; the worker below picks it up after a quiet moment
         scope.launch {
-            viewModel.allConversations.collect { pending = it }
+            viewModel.allConversations.collect {
+                pending = it
+                pendingDirty.set(true)
+            }
         }
         scope.launch {
             while (true) {
                 delay(1_500)
+                if (!pendingDirty.getAndSet(false)) continue
                 pending?.let(::enqueue)
             }
         }
@@ -123,12 +130,12 @@ object ChatSearchCache {
         if (index < 0) return null
         val original = entry.prompts[index]
         val hit = original.indexOf(q, ignoreCase = true)
-        if (hit < 0) return original.replace('\n', ' ').replace(Regex("\\s+"), " ").trim().take(140)
+        if (hit < 0) return original.replace('\n', ' ').replace(whitespaceRegex, " ").trim().take(140)
         val start = (hit - SNIPPET_BEFORE).coerceAtLeast(0)
         val end = (hit + q.length + SNIPPET_AFTER).coerceAtMost(original.length)
         var text = original.substring(start, end)
             .replace('\n', ' ')
-            .replace(Regex("\\s+"), " ")
+            .replace(whitespaceRegex, " ")
             .trim()
         if (start > 0) text = "…$text"
         if (end < original.length) text = "$text…"
