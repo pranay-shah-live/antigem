@@ -671,7 +671,7 @@ fun ChatInputBar(
                             modifier = Modifier.size(24.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Close,
+                                imageVector = Icons.Outlined.Close,
                                 contentDescription = "Clear quote",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                 modifier = Modifier.size(16.dp)
