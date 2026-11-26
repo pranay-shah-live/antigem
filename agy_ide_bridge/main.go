@@ -20,6 +20,8 @@ import (
 
 	// DNS for Android (no /etc/resolv.conf there); a package so `go build main.go` includes it too
 	_ "gemini-server/pkg/androiddns"
+	// Let's Encrypt roots for Android 7.0 (its system store has none); see pkg/androidcerts
+	_ "gemini-server/pkg/androidcerts"
 	"gemini-server/pkg/checkpoint"
 	"gemini-server/pkg/claude"
 	"gemini-server/pkg/codex"
@@ -413,14 +415,23 @@ func main() {
 	mux.Handle("/api/custom-plugins/", pluginMgr)
 
 	// Each agent's own skills folder (add from GitHub, update, remove) and Antigravity plugins from GitHub
-	mux.Handle("/api/agent-skills/", plugins.NewAgentSkills(pluginMgr, cfg.HomeDir, func() string {
+	agentSkills := plugins.NewAgentSkills(pluginMgr, cfg.HomeDir, func() string {
 		if hubMgr != nil {
 			if p := hubMgr.GetAgyBin(); p != "" {
 				return p
 			}
 		}
 		return hub.InstallerAgyPath()
-	}))
+	})
+	// turning skills off and on: Codex keeps it through its app-server, OpenCode in the bridge's OpenCode config
+	if codexMgr != nil {
+		agentSkills.Toggles.CodexCall = codexMgr.Call
+	}
+	if openCodeMgr != nil {
+		agentSkills.Toggles.OpenCodeDisabled = openCodeMgr.DisabledSkills
+		agentSkills.Toggles.OpenCodeSet = openCodeMgr.SetSkillEnabled
+	}
+	mux.Handle("/api/agent-skills/", agentSkills)
 
 	// REST Endpoints
 	mux.HandleFunc("/api/health", h.HealthHandler)
@@ -463,6 +474,8 @@ func main() {
 	mux.HandleFunc("/api/fs/archive/list", h.FsArchiveListHandler)
 	mux.HandleFunc("/api/fs/search", h.FsSearchHandler)
 	mux.HandleFunc("/api/fs/raw", h.FsRawHandler)
+	// a web page shown in the chat (html_app block naming an .html file): only files inside its folder
+	mux.HandleFunc("/api/fs/site", h.FsSiteHandler)
 	mux.HandleFunc("/api/fs/upload", h.FsUploadHandler)
 	mux.HandleFunc("/api/tree", h.FileTreeHandler)
 	mux.HandleFunc("/api/file/read", h.FileReadHandler)

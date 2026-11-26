@@ -1,12 +1,16 @@
 {
-  "version_code": 2050002,
-  "version_name": "F2.0.5-update1",
+  "version_code": 2050003,
+  "version_name": "F2.0.5-update2",
   "min_supported_version_code": 2,
   "changelog": [
-    "Floating Window & Agy Call UI: added depth shadows, crisp gradient edge borders, and compact icon buttons (Aspect Ratio, Max, Open, Min, Close) in FloatingChatActivity.",
-    "Automation Upgrade (android_automation_mcp): direct YouTube Music watch URI resolution for modified YT Music builds, AudioManager playback verification, package_name/url parameter aliases, and semantic-first UI instructions.",
-    "Foreground Service Fix: AntiGemService notification now counts running chat sessions alongside terminal sessions.",
-    "Merged upstream standalone updates and preserved all F2.0.5 features (jev_mcp, 1-shot assistant, NotificationListener, Discord dark theme, and debug update checks)."
+    "Search: the sidebar now finds chats by the prompts you typed, and shows the matching prompt under the chat title. Replies, thinking, tool calls and generated code are never indexed.",
+    "Pets: Settings → Pets with Gemmy and 7 friends (Kitsu, Frost, Beep, Mochi, Cinder, Mist, Lotl), each with its own reactions, signature move and favourite treat.",
+    "Agent control: on/off switches for each skill, MCP server and plugin of Antigravity, Claude Code, Codex and OpenCode.",
+    "Chat pages: web pages in chat can be multi-file sites (HTML, CSS, JS) or a saved page, and the new /playground command makes live HTML/CSS/JS pages.",
+    "IDE: Markdown files open as a formatted preview and can switch back to the source; saving keeps file permissions, and moving a folder into its parent no longer deletes it.",
+    "Security & stability: plugins ask before install/update, backups and crash reports leave out secrets, added a Phone tools key, fixed SSL errors and crashes on Android 7/7.1, and wireless debugging now turns off after 10 idle minutes.",
+    "Fixes carried from upstream: OpenCode chat export/share, Claude Code losing the last reply line, subagent chats grouped under their parent, termux-tts first-text silence, and wrong voice-message playback.",
+    "All fork features are preserved: floating system overlay with resize/depth/icon controls, Notes sync protection, Android automation upgrades, jev_mcp and the persistent signed release pipeline."
   ],
   "is_critical": false
 }
