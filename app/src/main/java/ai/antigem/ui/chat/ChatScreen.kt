@@ -2015,26 +2015,6 @@ fun ChatScreen(
                                         currentConv?.let { ai.antigem.data.homescreen.HomeShortcuts.pinChat(context, it.id, it.agent, displayedChatTitle) }
                                     }
                                 )
-                                DropdownMenuItem(
-                                    text = { Text(L.chat.screen.addAsAWidget) },
-                                    leadingIcon = { Icon(Icons.Outlined.Widgets, null, modifier = Modifier.size(18.dp)) },
-                                    onClick = {
-                                        titleMenuOpen = false
-                                        val conv = currentConv
-                                        if (conv != null) {
-                                            if (ai.antigem.ui.homescreen.HomeWidgets.canPin(context)) {
-                                                ai.antigem.ui.homescreen.HomeWidgets.pin(
-                                                    context, ai.antigem.ui.homescreen.WidgetKind.CHAT, Triple(conv.id, conv.agent, displayedChatTitle)
-                                                )
-                                            } else {
-                                                ai.antigem.ui.components.AppToastHelper.showToast(
-                                                    L.chat.screen.longPressYourHomeScreenWidgets,
-                                                    ai.antigem.ui.components.ChatToastType.INFO
-                                                )
-                                            }
-                                        }
-                                    }
-                                )
                             }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
