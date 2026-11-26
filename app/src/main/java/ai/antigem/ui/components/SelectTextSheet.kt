@@ -17,9 +17,14 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.FormatQuote
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,10 +57,15 @@ import ai.antigem.i18n.L
  * diagrams and tool cards are left out so nothing interferes with selecting); "Markdown" is the exact text.
  */
 @Composable
-fun SelectTextSheet(content: String, onDismiss: () -> Unit) {
+fun SelectTextSheet(
+    content: String,
+    onDismiss: () -> Unit,
+    onQuote: ((String) -> Unit)? = null
+) {
     val context = LocalContext.current
     var markdown by rememberSaveable { mutableStateOf(false) }
     val blocks = remember(content) { parseMarkdownBlocks(content) }
+    var mdFieldValue by remember(content) { mutableStateOf(TextFieldValue(content)) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -66,6 +76,20 @@ fun SelectTextSheet(content: String, onDismiss: () -> Unit) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L.common.close) }
                     Text(L.components.selectText.selectText, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    if (onQuote != null) {
+                        IconButton(onClick = {
+                            val sel = mdFieldValue.selection
+                            val toQuote = if (markdown && !sel.collapsed) {
+                                content.substring(sel.min, sel.max).trim()
+                            } else {
+                                content.trim()
+                            }
+                            if (toQuote.isNotEmpty()) {
+                                onQuote(toQuote)
+                                onDismiss()
+                            }
+                        }) { Icon(Icons.Outlined.FormatQuote, "Quote") }
+                    }
                     IconButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Copied Response", content))
@@ -84,7 +108,21 @@ fun SelectTextSheet(content: String, onDismiss: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         if (markdown) {
-                            Text(content, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp)
+                            BasicTextField(
+                                value = mdFieldValue,
+                                onValueChange = { updated ->
+                                    mdFieldValue = if (updated.text == content) updated else mdFieldValue.copy(selection = updated.selection)
+                                },
+                                readOnly = true,
+                                textStyle = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    lineHeight = 19.sp,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         } else {
                             blocks.forEach { block -> SelectableBlock(block) }
                         }

@@ -2652,6 +2652,10 @@ fun ChatScreen(
                                                 onViewRawPayload = { payloadJson ->
                                                     showRawPayloadDialog = payloadJson
                                                 },
+                                                onQuoteReply = { selected ->
+                                                    quotedReplyText = selected
+                                                    chatInputFocusRequester.requestFocus()
+                                                },
                                                 checkpoint = messageCheckpoints[feedItem.message.id],
                                                 onRestoreCheckpoint = { msg ->
                                                     messageCheckpoints[msg.id]?.let { restoreSheetFor = msg to it }
@@ -2724,6 +2728,10 @@ fun ChatScreen(
                                                 },
                                                 onViewRawPayload = { payloadJson ->
                                                     showRawPayloadDialog = payloadJson
+                                                },
+                                                onQuoteReply = { selected ->
+                                                    quotedReplyText = selected
+                                                    chatInputFocusRequester.requestFocus()
                                                 },
                                                 onShowArtifacts = { showArtifactsDrawer = true },
                                                 artifactsCount = artifacts.size

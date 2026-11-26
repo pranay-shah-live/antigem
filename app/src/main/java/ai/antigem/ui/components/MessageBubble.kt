@@ -75,6 +75,7 @@ fun MessageBubble(
     onUpdateSummary: ((String) -> Unit)? = null,
     onDeleteSummary: (() -> Unit)? = null,
     onViewRawPayload: ((String) -> Unit)? = null,
+    onQuoteReply: ((String) -> Unit)? = null,
     onShowArtifacts: (() -> Unit)? = null,
     artifactsCount: Int = 0,
     summarizingModelName: String = "AI",
@@ -367,6 +368,7 @@ fun UserMessageBubble(
     onEdit: (ChatMessage) -> Unit = {},
     onRetry: (ChatMessage) -> Unit = {},
     onViewRawPayload: ((String) -> Unit)? = null,
+    onQuoteReply: ((String) -> Unit)? = null,
     /** false in a read-only chat: no "undo and edit". */
     canEdit: Boolean = true,
     /** The project checkpoint saved right before this message (Settings → Project checkpoints), if any. */
@@ -680,6 +682,7 @@ fun AssistantMessageFooter(
     isDevModeEnabled: Boolean = false,
     onRetry: (ChatMessage) -> Unit = {},
     onViewRawPayload: ((String) -> Unit)? = null,
+    onQuoteReply: ((String) -> Unit)? = null,
     onShowArtifacts: (() -> Unit)? = null,
     artifactsCount: Int = 0,
     /** false in a read-only chat: no "regenerate". */
@@ -744,7 +747,11 @@ fun AssistantMessageFooter(
                 )
             }
             if (showSelectText) {
-                SelectTextSheet(content = message.content) { showSelectText = false }
+                SelectTextSheet(
+                    content = message.content,
+                    onDismiss = { showSelectText = false },
+                    onQuote = onQuoteReply
+                )
             }
 
             if (canRetry) Spacer(modifier = Modifier.width(4.dp))

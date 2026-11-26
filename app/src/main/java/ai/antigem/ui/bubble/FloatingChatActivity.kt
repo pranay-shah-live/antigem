@@ -155,13 +155,10 @@ fun FloatingChatWindow(
                 Modifier.fillMaxWidth().height(42.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)).padding(end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "AntiGem Fork",
-                    modifier = Modifier.weight(1f).fillMaxHeight().pointerInput(Unit) {
+                Box(
+                    modifier = Modifier.weight(1f).height(32.dp).pointerInput(Unit) {
                         detectDragGestures { change, amount -> change.consume(); onMove(amount.x, amount.y) }
-                    }.padding(start = 14.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
                 IconButton(onClick = { aspectRatioLocked = !aspectRatioLocked }, modifier = Modifier.size(34.dp)) {
                     Icon(

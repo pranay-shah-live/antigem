@@ -60,6 +60,8 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -184,6 +186,12 @@ private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgy
     val captionsOn by AgyVoicePreferences.captions.collectAsState()
     var showTypeInput by remember { mutableStateOf(false) }
     var typedCommand by remember { mutableStateOf("") }
+    val typeFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(showTypeInput) {
+        if (showTypeInput) {
+            runCatching { typeFocusRequester.requestFocus() }
+        }
+    }
     val clock = rememberCallClock(st.connectedAt)
     var showVoices by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
@@ -886,6 +894,12 @@ fun AgyVoiceFloatingPanel(
     val captionsOn by AgyVoicePreferences.captions.collectAsState()
     var showTypeInput by remember { mutableStateOf(false) }
     var typedCommand by remember { mutableStateOf("") }
+    val typeFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(showTypeInput) {
+        if (showTypeInput) {
+            runCatching { typeFocusRequester.requestFocus() }
+        }
+    }
     val clock = rememberCallClock(st.connectedAt)
     val minimize by rememberUpdatedState(onMinimize)
     val failed = st.phase == Phase.FAILED
@@ -1024,7 +1038,7 @@ fun AgyVoiceFloatingPanel(
                                         cursorBrush = SolidColor(rgb(voice.core)),
                                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                                         keyboardActions = KeyboardActions(onSend = { sendTyped() }),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth().focusRequester(typeFocusRequester)
                                     )
                                 }
                                 Spacer(Modifier.width(8.dp))
