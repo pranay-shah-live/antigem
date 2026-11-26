@@ -23,12 +23,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import ai.antigem.i18n.L
 
 class AntiGemApplication : Application(), coil.ImageLoaderFactory {
-    companion object {
-        @Volatile
-        var isAppInForeground: Boolean = false
-            private set
-        private var startedActivities: Int = 0
-    }
     /**
      * Images that live on the bridge (a server's files, attachments) need the security header, which Coil's
      * default client does not send. Only requests to the bridge address get it.
@@ -205,9 +199,14 @@ class AntiGemApplication : Application(), coil.ImageLoaderFactory {
         }
     }.getOrDefault(false)
 
-    private companion object {
+    companion object {
+        @Volatile
+        var isAppInForeground: Boolean = false
+            private set
+        private var startedActivities: Int = 0
+
         // SHA-256 of the release.jks certificate (alias "antigem"). Public, safe to commit.
-        const val RELEASE_CERT_SHA256 = "CCF2C681063BA941641519E4EAC7F024E92880CCD06EED5070DAA9717380F315"
+        private const val RELEASE_CERT_SHA256 = "CCF2C681063BA941641519E4EAC7F024E92880CCD06EED5070DAA9717380F315"
     }
 }
 
