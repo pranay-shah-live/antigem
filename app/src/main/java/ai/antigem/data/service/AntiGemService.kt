@@ -264,6 +264,7 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
     }
 
     private fun postTaskCompletionNotification(notificationId: Int, title: String, body: String) {
+        if (ai.antigem.AntiGemApplication.isAppInForeground) return
         runCatching {
             val launchIntent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -274,8 +275,10 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
                 launchIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+            val appIcon = android.graphics.BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
             val notification = NotificationCompat.Builder(this, TASK_COMPLETION_CHANNEL_ID)
                 .setSmallIcon(R.mipmap.ic_launcher)
+                .apply { if (appIcon != null) setLargeIcon(appIcon) }
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))

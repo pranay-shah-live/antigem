@@ -634,10 +634,17 @@ fun ChatInputBar(
             )
 
             if (!quotedText.isNullOrBlank()) {
+                var quoteExpanded by remember(quotedText) { mutableStateOf(false) }
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 6.dp),
+                        .padding(bottom = 6.dp)
+                        .pointerInput(quotedText) {
+                            detectVerticalDragGestures { _, dragAmount ->
+                                if (dragAmount < -12f) quoteExpanded = true
+                                else if (dragAmount > 12f) quoteExpanded = false
+                            }
+                        },
                     shape = RoundedCornerShape(14.dp),
                     color = ai.antigem.theme.AppColors.card,
                     border = BorderStroke(
@@ -645,37 +652,65 @@ fun ChatInputBar(
                         if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                     )
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.FormatQuote,
-                            contentDescription = "Quoted reply",
-                            tint = ClaudeTerracotta,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = quotedText.trim(),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = onClearQuote,
-                            modifier = Modifier.size(24.dp)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { quoteExpanded = !quoteExpanded }
+                                .padding(top = 6.dp, bottom = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(32.dp)
+                                    .height(3.5.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f))
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.Top
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.Close,
-                                contentDescription = "Clear quote",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                modifier = Modifier.size(16.dp)
+                                imageVector = Icons.Outlined.FormatQuote,
+                                contentDescription = "Quoted reply",
+                                tint = ClaudeTerracotta,
+                                modifier = Modifier.padding(top = 2.dp).size(16.dp)
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .then(
+                                        if (quoteExpanded) {
+                                            Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                            ) {
+                                Text(
+                                    text = quotedText.trim(),
+                                    maxLines = if (quoteExpanded) Int.MAX_VALUE else 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
+                                )
+                            }
+                            IconButton(
+                                onClick = onClearQuote,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Close,
+                                    contentDescription = "Clear quote",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }

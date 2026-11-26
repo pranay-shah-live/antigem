@@ -23,6 +23,12 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import ai.antigem.i18n.L
 
 class AntiGemApplication : Application(), coil.ImageLoaderFactory {
+    companion object {
+        @Volatile
+        var isAppInForeground: Boolean = false
+            private set
+        private var startedActivities: Int = 0
+    }
     /**
      * Images that live on the bridge (a server's files, attachments) need the security header, which Coil's
      * default client does not send. Only requests to the bridge address get it.
@@ -80,6 +86,21 @@ class AntiGemApplication : Application(), coil.ImageLoaderFactory {
         ai.antigem.crash.CrashHandler.install(this)
         // the crash screen's own process needs none of the startup below
         if (ai.antigem.crash.CrashHandler.isCrashProcess(this)) return
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(a: android.app.Activity, s: android.os.Bundle?) {}
+            override fun onActivityStarted(a: android.app.Activity) {
+                startedActivities++
+                isAppInForeground = startedActivities > 0
+            }
+            override fun onActivityResumed(a: android.app.Activity) {}
+            override fun onActivityPaused(a: android.app.Activity) {}
+            override fun onActivityStopped(a: android.app.Activity) {
+                startedActivities = (startedActivities - 1).coerceAtLeast(0)
+                isAppInForeground = startedActivities > 0
+            }
+            override fun onActivitySaveInstanceState(a: android.app.Activity, outState: android.os.Bundle) {}
+            override fun onActivityDestroyed(a: android.app.Activity) {}
+        })
         // loads the saved server addresses, Remote mode and the SSH key into memory before anything connects
         ai.antigem.data.preferences.AuthPreferences(this)
         // where chat pictures that arrive as data are kept as files (its trim runs in the background)
