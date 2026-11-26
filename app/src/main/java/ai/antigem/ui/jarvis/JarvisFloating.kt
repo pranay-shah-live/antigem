@@ -402,7 +402,7 @@ object JarvisFloating : LifecycleOwner, SavedStateRegistryOwner, OnBackPressedDi
         // reach the app underneath
         val p = overlayParams(WindowManager.LayoutParams.MATCH_PARENT, height, WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL).apply {
             gravity = Gravity.BOTTOM
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
         return add(host(BackFrame(a)) { FloatingSheet() }, p)
     }

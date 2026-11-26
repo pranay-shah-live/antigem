@@ -187,9 +187,12 @@ private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgy
     var showTypeInput by remember { mutableStateOf(false) }
     var typedCommand by remember { mutableStateOf("") }
     val typeFocusRequester = remember { FocusRequester() }
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     LaunchedEffect(showTypeInput) {
         if (showTypeInput) {
+            kotlinx.coroutines.delay(50)
             runCatching { typeFocusRequester.requestFocus() }
+            keyboardController?.show()
         }
     }
     val clock = rememberCallClock(st.connectedAt)
@@ -895,9 +898,12 @@ fun AgyVoiceFloatingPanel(
     var showTypeInput by remember { mutableStateOf(false) }
     var typedCommand by remember { mutableStateOf("") }
     val typeFocusRequester = remember { FocusRequester() }
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     LaunchedEffect(showTypeInput) {
         if (showTypeInput) {
+            kotlinx.coroutines.delay(50)
             runCatching { typeFocusRequester.requestFocus() }
+            keyboardController?.show()
         }
     }
     val clock = rememberCallClock(st.connectedAt)
@@ -1022,7 +1028,17 @@ fun AgyVoiceFloatingPanel(
                                     .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            runCatching { typeFocusRequester.requestFocus() }
+                                            keyboardController?.show()
+                                        }
+                                ) {
                                     if (typedCommand.isEmpty()) {
                                         Text(
                                             text = "Type a command to Gemini...",
