@@ -185,6 +185,10 @@ android {
             if (persistentDebugKeystore != null) {
                 signingConfig = signingConfigs.getByName("persistentDebug")
             }
+            // The fork ships this variant, so it must not be a debuggable build: a debuggable app is never
+            // AOT-compiled at install and runs Compose with its debug overhead (measured ~21% janky frames,
+            // 150 ms frames). Minification stays off, only the debug flag and its runtime cost are removed.
+            isDebuggable = false
             buildConfigField("int", "BRIDGE_PORT", "1238")
             buildConfigField("int", "HUB_PORT", "1239")
             buildConfigField("int", "BROWSER_MCP_PORT", "8768")
