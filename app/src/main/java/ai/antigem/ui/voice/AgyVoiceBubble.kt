@@ -132,7 +132,6 @@ object AgyVoiceBubble : LifecycleOwner, SavedStateRegistryOwner {
     /** The window's size and place: the panel on the lower half, or the circle against its side. */
     private fun layout(p: WindowManager.LayoutParams) {
         val screen = (app ?: return).resources.displayMetrics
-        val baseFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         if (_expanded.value) {
             val dp = screen.density
             p.width = WindowManager.LayoutParams.MATCH_PARENT
@@ -142,15 +141,16 @@ object AgyVoiceBubble : LifecycleOwner, SavedStateRegistryOwner {
             p.gravity = Gravity.BOTTOM
             p.x = 0
             p.y = 0
-            // like the call screen in the app: the screen stays on while the panel is up
-            p.flags = baseFlags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            // Focusable and resize for keyboard so typing works in the floating panel
+            p.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            p.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         } else {
             p.width = WindowManager.LayoutParams.WRAP_CONTENT
             p.height = WindowManager.LayoutParams.WRAP_CONTENT
             p.gravity = Gravity.TOP or Gravity.START
             p.x = if (dockRight) maxOf(0, screen.widthPixels - circleSize.width) else 0
             p.y = (lastY ?: (screen.heightPixels / 3)).coerceIn(0, maxOf(0, screen.heightPixels - circleSize.height))
-            p.flags = baseFlags
+            p.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         }
     }
 
