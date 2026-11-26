@@ -2697,17 +2697,48 @@ private fun buildRichAnnotatedString(
                 builder.append(" $codeContent ")
                 builder.pop()
             } else {
-                builder.pushStyle(
-                    SpanStyle(
-                        fontFamily = FontFamily.Monospace,
-                        background = ai.antigem.theme.AppColors.warning.copy(alpha = 0.14f),
-                        fontWeight = FontWeight.SemiBold,
-                        color = ClaudeTerracotta,
-                        fontSize = 12.5.sp
+                val trimmedCode = codeContent.trim()
+                val isFilePath = (trimmedCode.startsWith("/") || trimmedCode.startsWith("~/") || trimmedCode.startsWith("file://", ignoreCase = true)) &&
+                    !trimmedCode.contains("\n") &&
+                    trimmedCode.length in 3..256
+
+                if (isFilePath) {
+                    val filePath = if (trimmedCode.startsWith("file://", ignoreCase = true)) trimmedCode else "file://$trimmedCode"
+                    builder.pushLink(
+                        LinkAnnotation.Clickable(
+                            tag = filePath,
+                            linkInteractionListener = {
+                                val handler = fileLinkHandler ?: ActiveFileLinkHandlerHolder.current
+                                handler?.onOpenFile?.invoke(filePath)
+                            }
+                        )
                     )
-                )
-                builder.append(" $codeContent ")
-                builder.pop()
+                    builder.pushStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            background = ClaudeTerracotta.copy(alpha = 0.14f),
+                            fontWeight = FontWeight.SemiBold,
+                            color = ClaudeTerracotta,
+                            textDecoration = TextDecoration.Underline,
+                            fontSize = 12.5.sp
+                        )
+                    )
+                    builder.append(" $codeContent ")
+                    builder.pop()
+                    builder.pop()
+                } else {
+                    builder.pushStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            background = ai.antigem.theme.AppColors.warning.copy(alpha = 0.14f),
+                            fontWeight = FontWeight.SemiBold,
+                            color = ClaudeTerracotta,
+                            fontSize = 12.5.sp
+                        )
+                    )
+                    builder.append(" $codeContent ")
+                    builder.pop()
+                }
             }
         } else if ((fullMatch.startsWith("$") && fullMatch.endsWith("$") && fullMatch.length > 2) || (fullMatch.startsWith("\\(") && fullMatch.endsWith("\\)"))) {
             // Native JLatexMath Inline Math
