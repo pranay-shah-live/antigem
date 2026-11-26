@@ -73,31 +73,10 @@ class AntiGemApplication : Application(), coil.ImageLoaderFactory {
         ai.antigem.data.pc.PcConnect.init(this)
         // the cloud project new Antigravity chats start in (Remote Agents), before the first chat is created
         ai.antigem.data.agent.agy.AgyCloud.init(this)
-        // Forks build with their own key, so only official release APKs report real usage.
-        if (!BuildConfig.DEBUG && !isOfficialRelease()) {
-            Toast.makeText(
-                this,
-                L.app.antiGemApplication.unofficialBuildAnalyticsDisabled,
-                Toast.LENGTH_LONG
-            ).show()
-            return
-        }
-        TelemetryDeck.start(
-            this,
-            TelemetryDeck.Builder()
-                .appID("5BE26330-812A-4293-AFB7-F5C98EAE4B82")
-                .namespace("ai.antigem")
-                .defaultUser(SimpleTelemetryId.getUniqueUserId(this))
-                .testMode(BuildConfig.DEBUG)
-                .showDebugLogs(BuildConfig.DEBUG)
-                // Only installs and updates are reported (the free plan counts every signal): nothing per app open,
-                // and no session tracking (the SDK's would send a signal per open and time how long the app is used)
-                .sendNewSessionBeganSignal(false)
-                .sessionProvider(NoSessionTracking())
-                // the SDK's own file cache crashes the app when storage is full (see SafeSignalCache)
-                .signalCache(SafeSignalCache(cacheDir))
-        )
-        reportInstallOrUpdate()
+        // Analytics is off in this fork. It used to start from debug builds (the shipped variant) in test mode with
+        // debug logs, and when the endpoint was unreachable the SDK retried every 10 s forever, writing a multi-KB
+        // request body and a stack trace each time. Nothing here reports anything now.
+        return
     }
 
     /**
