@@ -655,6 +655,17 @@ internal fun ServersSubScreen(
         modifier = Modifier.fillMaxSize().bouncyVerticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        OutlinedButton(
+            onClick = {
+                ai.antigem.data.local.LocalServerManager.restartServer(context)
+                Toast.makeText(context, L.common.restarting, Toast.LENGTH_SHORT).show()
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, ClaudeTerracotta.copy(alpha = 0.5f))
+        ) {
+            Text(L.common.restartServer, color = ClaudeTerracotta, fontWeight = FontWeight.SemiBold)
+        }
         // ----- Where does the server run? -----
         Card(Modifier.fillMaxWidth(), RoundedCornerShape(14.dp), CardDefaults.cardColors(containerColor = cardBg), border = cardBorder) {
             Column(Modifier.padding(16.dp)) {
