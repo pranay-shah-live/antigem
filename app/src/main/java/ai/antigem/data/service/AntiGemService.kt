@@ -53,11 +53,15 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
     private var currentSessionCount: Int = 0
     /** Run panel / IDE commands still running (they keep this service, and so the app, alive). */
     private var currentRunCount: Int = 0
+    private var previousRunningRunIds: Set<String> = emptySet()
+    private var previousRunningChatIds: Set<String> = emptySet()
+    private var hasInitializedTaskTracking: Boolean = false
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     companion object {
         private const val TAG = "AntiGemService"
+        private const val TASK_COMPLETION_CHANNEL_ID = "task_completions"
         private const val CHANNEL_ID = "antigem_termux_service_channel"
         private const val NOTIFICATION_ID = 1337
 
@@ -176,11 +180,34 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
                 ai.antigem.data.run.RunManager.runs,
                 chatFlow
             ) { sessions, runs, conversations ->
+                Triple(sessions.size, runs, conversations)
+            }.collect { (terminalCount, runs, conversations) ->
+                if (hasInitializedTaskTracking) {
+                    val finishedRuns = runs.filter {
+                        it.id in previousRunningRunIds &&
+                            it.status != ai.antigem.data.run.RunStatus.RUNNING &&
+                            it.origin != "home"
+                    }
+                    finishedRuns.forEach { notifyRunCompleted(it) }
+
+                    val finishedChats = conversations.filter {
+                        it.id in previousRunningChatIds && !it.isRunning
+                    }
+                    finishedChats.forEach { notifyChatCompleted(it) }
+                }
+                previousRunningRunIds = runs
+                    .filter { it.status == ai.antigem.data.run.RunStatus.RUNNING }
+                    .map { it.id }
+                    .toSet()
+                previousRunningChatIds = conversations
+                    .filter { it.isRunning }
+                    .map { it.id }
+                    .toSet()
+                hasInitializedTaskTracking = true
+
                 val activeChats = conversations.count { it.isRunning }
-                (sessions.size + activeChats) to runs.count { it.status == ai.antigem.data.run.RunStatus.RUNNING }
-            }.collect { (sessions, running) ->
-                currentSessionCount = sessions
-                currentRunCount = running
+                currentSessionCount = terminalCount + activeChats
+                currentRunCount = previousRunningRunIds.size
                 updateNotification()
             }
         }
@@ -202,6 +229,61 @@ open class AntiGemService : Service(), LifecycleOwner, ViewModelStoreOwner, Save
             }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
+
+            val taskChannel = NotificationChannel(
+                TASK_COMPLETION_CHANNEL_ID,
+                "Task completions",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Notifications when background tasks finish and await your input"
+            }
+            notificationManager.createNotificationChannel(taskChannel)
+        }
+    }
+
+    private fun notifyRunCompleted(run: ai.antigem.data.run.RunEntry) {
+        val title = when (run.status) {
+            ai.antigem.data.run.RunStatus.SUCCEEDED -> "✓ ${run.name} finished"
+            ai.antigem.data.run.RunStatus.STOPPED -> "${run.name} stopped"
+            else -> "✗ ${run.name} failed" + (run.exitCode?.let { " (exit $it)" } ?: "")
+        }
+        val tail = runCatching { ai.antigem.data.run.RunManager.recentOutput(run.id, 3) }
+            .getOrDefault("")
+            .trim()
+        val body = tail.lineSequence().lastOrNull { it.isNotBlank() } ?: "Tap to view output"
+        postTaskCompletionNotification("run_${run.id}".hashCode(), title, body)
+    }
+
+    private fun notifyChatCompleted(conversation: ai.antigem.domain.model.Conversation) {
+        val title = conversation.title.ifBlank { "Agent task" }
+        postTaskCompletionNotification(
+            "chat_${conversation.id}".hashCode(),
+            "✓ $title",
+            "Task finished and awaits your next step"
+        )
+    }
+
+    private fun postTaskCompletionNotification(notificationId: Int, title: String, body: String) {
+        runCatching {
+            val launchIntent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                notificationId,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = NotificationCompat.Builder(this, TASK_COMPLETION_CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.notify(notificationId, notification)
         }
     }
 
