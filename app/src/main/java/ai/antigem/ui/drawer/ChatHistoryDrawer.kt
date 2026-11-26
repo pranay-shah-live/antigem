@@ -1092,10 +1092,6 @@ fun ChatHistoryDrawer(
                                             }
                                         } else null,
                                         onSelectConversation = {
-                                            Log.d(
-                                                "CHAT_OPEN_DEBUG",
-                                                "📂 [Drawer] User clicked conversation: id=${conv.id}, title='${conv.title}'"
-                                            )
                                             onSelectConversation(conv.id)
                                         },
                                         onForkConversation = onForkConversation,
@@ -1213,10 +1209,6 @@ fun ChatHistoryDrawer(
                                                 }
                                             } else null,
                                             onSelectConversation = {
-                                                Log.d(
-                                                    "CHAT_OPEN_DEBUG",
-                                                    "📂 [Drawer Compact] User clicked conversation: id=${conv.id}, title='${conv.title}'"
-                                                )
                                                 onSelectConversation(conv.id)
                                             },
                                             onForkConversation = onForkConversation,
@@ -1627,7 +1619,6 @@ private fun ChatHistoryItemRow(
                 else Color.Transparent
             )
             .clickable {
-                Log.d("CHAT_OPEN_DEBUG", "📂 [Drawer Row] User clicked: id=${conv.id}, title='${conv.title}'")
                 onSelectConversation(conv.id)
             }
             .padding(
@@ -2455,10 +2446,6 @@ fun SearchChatsDialog(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
                                     .clickable {
-                                        Log.d(
-                                            "CHAT_OPEN_DEBUG",
-                                            "📂 [Drawer Dialog] User clicked: id=${conv.id}, title='${conv.title}'"
-                                        )
                                         onSelectConversation(conv.id)
                                         onDismiss()
                                     }

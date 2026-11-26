@@ -1079,9 +1079,7 @@ class AgyChatBackend(
     }
 
     override fun selectConversation(id: String) {
-        Log.d("CHAT_OPEN_DEBUG", "👉 [ChatViewModel.selectConversation] id=$id, activeStreamId=$activeStreamConversationId, isLoading=${_isLoadingConversation.value}, msgCount=${_messages.value.size}")
         if (id == activeStreamConversationId && !_isLoadingConversation.value && _messages.value.isNotEmpty()) {
-            Log.d("CHAT_OPEN_DEBUG", "👉 [ChatViewModel.selectConversation] Skipped: already active conversation with messages")
             return
         }
 
@@ -1111,7 +1109,6 @@ class AgyChatBackend(
 
             val conv = _conversations.value.find { it.id == id }
                 ?: Conversation(id = id, title = "Antigravity Chat", sessionId = id)
-            Log.d("CHAT_OPEN_DEBUG", "👉 [ChatViewModel.selectConversation] Launching stream for conv: title='${conv.title}', id=${conv.id}")
             _currentConversation.value = conv
             // this app's pending queued sends for the chat (the daemon's queue arrives with the first frame)
             refreshQueuedMessages(id)
@@ -1179,7 +1176,6 @@ class AgyChatBackend(
     }
 
     fun startPersistentStream(conversationId: String) {
-        Log.d("CHAT_OPEN_DEBUG", "🌊 [ChatViewModel.startPersistentStream] convId=$conversationId, current activeId=$activeStreamConversationId, jobActive=${persistentStreamJob?.isActive}")
         if (conversationId.isBlank()) return
 
         // Another agent's chat is on screen: never stream it from the AGY hub
@@ -1188,14 +1184,12 @@ class AgyChatBackend(
         // Brand new unsaved conversation: do not fetch trajectory from backend
         val isNewUnsaved = (_currentConversation.value?.id == conversationId && _currentConversation.value?.title == "New Chat" && _messages.value.isEmpty()) && !_conversations.value.any { it.id == conversationId }
         if (isNewUnsaved) {
-            Log.d("CHAT_OPEN_DEBUG", "🌊 [ChatViewModel.startPersistentStream] Skipped: $conversationId is a brand new unsaved chat")
             _isLoadingConversation.value = false
             _conversationError.value = null
             return
         }
 
         if (activeStreamConversationId == conversationId && persistentStreamJob?.isActive == true) {
-            Log.d("CHAT_OPEN_DEBUG", "🌊 [ChatViewModel.startPersistentStream] Already actively running for $conversationId")
             return
         }
 
@@ -1219,7 +1213,6 @@ class AgyChatBackend(
                 trajectoryEngine.reset(conversationId)
             }
 
-            Log.d("CHAT_OPEN_DEBUG", "🌊 [ChatViewModel.startPersistentStream] Starting loop for $conversationId on $hubUrl")
 
             while (activeStreamConversationId == conversationId) {
                 var rehydrateRequested = false
@@ -1230,7 +1223,6 @@ class AgyChatBackend(
                             try {
                                 agyHubClient.streamAgentStateUpdates(conversationId, hubUrl).collect { resp ->
                                     if (activeStreamConversationId != conversationId) {
-                                        Log.d("CHAT_OPEN_DEBUG", "🌊 [ChatViewModel Stream] Dropping frame for inactive conversation (active=$activeStreamConversationId vs frame=$conversationId)")
                                         return@collect
                                     }
 
@@ -1239,7 +1231,6 @@ class AgyChatBackend(
                                     val update = resp.update
                                     val statusStr = update?.status?.name ?: ""
                                     val stepsCount = update?.main_trajectory_update?.steps_update?.steps?.size ?: 0
-                                    Log.d("CHAT_OPEN_DEBUG", "📥 [ChatViewModel Stream Frame] convId=$conversationId, isFirstChunk=$isFirstChunk, status=$statusStr, stepsCount=$stepsCount")
                                     val historyChunk = isFirstChunk
                                     isFirstChunk = false
                                     val turns = if (update != null) trajectoryEngine.ingestAgentStateUpdate(update) else emptyList()
@@ -1265,7 +1256,6 @@ class AgyChatBackend(
                                         }
                                         refreshQueuedMessages(conversationId)
 
-                                        Log.d("CHAT_OPEN_DEBUG", "✨ [ChatViewModel State Update] convId=$conversationId, turnsCount=${turns.size}, msgsCount=${msgs.size}, isRunning=$isRunning, isWaiting=$isWaiting")
 
                                         _messages.value = msgs
                                         if (historyChunk) adoptChatModelFromHistory(conversationId, msgs)
@@ -1304,7 +1294,7 @@ class AgyChatBackend(
                                 if (streamRunning && !optimisticActive && summaryIdle && silentMs >= 5_000L) {
                                     if (mismatchSinceMs == 0L) mismatchSinceMs = now
                                     if (now - mismatchSinceMs >= 4_000L && now - lastRehydrateAtMs >= 10_000L) {
-                                        Log.w("CHAT_OPEN_DEBUG", "🔄 [ChatViewModel Stream Watchdog] Stream RUNNING while summary IDLE and silent for ${silentMs}ms (convId=$conversationId); rehydrating")
+                                        Log.w("ChatStream", "🔄 [ChatViewModel Stream Watchdog] Stream RUNNING while summary IDLE and silent for ${silentMs}ms (convId=$conversationId); rehydrating")
                                         lastRehydrateAtMs = now
                                         rehydrateRequested = true
                                         collectJob.cancel()
@@ -1329,7 +1319,7 @@ class AgyChatBackend(
                     if (isFirstChunk) {
                         if (activeStreamConversationId != conversationId) break
                         val isHubOnline = agyBridgeService.hubStatus.value.status == "online"
-                        Log.w("CHAT_OPEN_DEBUG", "⚠️ [ChatViewModel Stream Loop] Stream finished without delivering frames: isFirstChunk=true, isHubOnline=$isHubOnline")
+                        Log.w("ChatStream", "⚠️ [ChatViewModel Stream Loop] Stream finished without delivering frames: isFirstChunk=true, isHubOnline=$isHubOnline")
                         withContext(Dispatchers.Main) {
                             _isLoadingConversation.value = false
                             _isReconnecting.value = false
@@ -1362,7 +1352,7 @@ class AgyChatBackend(
                     if (e is kotlinx.coroutines.CancellationException) {
                         break
                     }
-                    Log.e("CHAT_OPEN_DEBUG", "❌ [ChatViewModel Stream Exception] convId=$conversationId: ${e.message}", e)
+                    Log.e("ChatStream", "❌ [ChatViewModel Stream Exception] convId=$conversationId: ${e.message}", e)
                     Log.w("ChatViewModel", "Persistent stream error ($conversationId): ${e.message}")
                     val rawErr = e.localizedMessage ?: e.message ?: e.toString()
                     val helpfulMsg = if (rawErr.contains("Connect", ignoreCase = true) || rawErr.contains("Failed to connect", ignoreCase = true)) {

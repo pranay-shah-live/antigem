@@ -241,7 +241,6 @@ class TrajectoryEngine {
             s.user_input?.tags?.forEach { if (it.startsWith(CLIENT_MSG_TAG_PREFIX)) seenClientTags.add(it) }
         }
 
-        Log.d("CHAT_OPEN_DEBUG", "⚙️ [TrajectoryEngine.ingestAgentStateUpdate] convId=$conversationId, trajId=$trajectoryId, status=$status, termination=$liveTerminationReason, stepsCount=${effectiveSteps.size}")
 
         if (effectiveSteps.isNotEmpty()) {
             val isInitialFullSync = (effectiveIndices.firstOrNull() == 0) || (completedTurns.isEmpty() && activeStepsMap.isEmpty())
@@ -809,7 +808,6 @@ class TrajectoryEngine {
                 }
             }
         }
-        Log.d("CHAT_OPEN_DEBUG", "📋 [TrajectoryEngine.toChatMessages] convId=$convId produced ${messages.size} messages from ${currentTurns.size} turns (roles: ${messages.map { it.role }})")
         return messages
     }
 

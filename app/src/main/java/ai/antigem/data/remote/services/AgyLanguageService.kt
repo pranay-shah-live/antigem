@@ -122,14 +122,13 @@ fun <Req : Any, Resp : Any> GrpcStreamingCall<Req, Resp>.asFlowSafely(
         }
         channel.close()
     } catch (e: CancellationException) {
-        android.util.Log.d("CHAT_OPEN_DEBUG", "⚠️ [AgyLanguageService.asFlowSafely] Stream cancelled: ${e.message}")
         throw e
     } catch (e: GrpcException) {
-        android.util.Log.e("CHAT_OPEN_DEBUG", "❌ [AgyLanguageService.asFlowSafely] GrpcException: status=${e.grpcStatus}, msg=${e.grpcMessage}", e)
+        android.util.Log.e("ChatStream", "❌ [AgyLanguageService.asFlowSafely] GrpcException: status=${e.grpcStatus}, msg=${e.grpcMessage}", e)
         val isCsrfError = e.grpcStatus == GrpcStatus.UNAUTHENTICATED || e.grpcMessage?.contains("CSRF", ignoreCase = true) == true
         if (isCsrfError) {
             val hubUrl = AuthPreferences.currentHubUrl
-            android.util.Log.w("CHAT_OPEN_DEBUG", "🔄 [AgyLanguageService.asFlowSafely] CSRF error on stream. Invalidating CSRF cache for $hubUrl...")
+            android.util.Log.w("ChatStream", "🔄 [AgyLanguageService.asFlowSafely] CSRF error on stream. Invalidating CSRF cache for $hubUrl...")
             AgyCsrfManager.instance.notifyCsrfExpired(hubUrl, "asFlowSafely", usedToken = tokenAtStart)
         }
         val err = when (e.grpcStatus) {
@@ -139,10 +138,10 @@ fun <Req : Any, Resp : Any> GrpcStreamingCall<Req, Resp>.asFlowSafely(
         }
         channel.close(err)
     } catch (e: IOException) {
-        android.util.Log.e("CHAT_OPEN_DEBUG", "❌ [AgyLanguageService.asFlowSafely] IOException: ${e.message}", e)
+        android.util.Log.e("ChatStream", "❌ [AgyLanguageService.asFlowSafely] IOException: ${e.message}", e)
         channel.close(AgyRpcError.DaemonOffline("Stream connection broken: ${e.message}", e))
     } catch (e: Throwable) {
-        android.util.Log.e("CHAT_OPEN_DEBUG", "❌ [AgyLanguageService.asFlowSafely] Throwable: ${e.message}", e)
+        android.util.Log.e("ChatStream", "❌ [AgyLanguageService.asFlowSafely] Throwable: ${e.message}", e)
         channel.close(AgyRpcError.Unknown(e.message ?: "Stream error", e))
     } finally {
         responseChannel.cancel()
@@ -150,7 +149,6 @@ fun <Req : Any, Resp : Any> GrpcStreamingCall<Req, Resp>.asFlowSafely(
     }
 
     awaitClose {
-        android.util.Log.d("CHAT_OPEN_DEBUG", "🔒 [AgyLanguageService.asFlowSafely] awaitClose invoked, cancelling channel.")
         responseChannel.cancel()
         requestChannel.close()
         cancel()

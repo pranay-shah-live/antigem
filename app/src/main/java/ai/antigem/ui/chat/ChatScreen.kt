@@ -1430,7 +1430,6 @@ fun ChatScreen(
                 onRetry = { viewModel.retryConnections() },
                 isOpen = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open,
                 onSelectConversation = { id ->
-                    Log.d("CHAT_OPEN_DEBUG", "🎯 [ChatScreen] User selected conversation: id=$id")
                     val currentId = currentConv?.id
                     if (!currentId.isNullOrBlank() && feedItems.isNotEmpty()) {
                         ConversationScrollCache.save(currentId, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, isAtBottom)
@@ -2086,7 +2085,6 @@ fun ChatScreen(
                     // never finishes loading. Both step aside for the empty view's "not installed" card with Install.
                     val agyMissingHere = isAgyChat && agyNotInstalled
                     val isExistingChat = messages.isEmpty() && isExistingConversation && isLoadingConversation && !agyMissingHere
-                    Log.d("CHAT_OPEN_DEBUG", "🖥️ [ChatScreen Render] convId=${currentConv?.id}, title='${currentConv?.title}', isLoading=$isLoadingConversation, isExisting=$isExistingChat, msgCount=${messages.size}, error=$conversationError, isServerStopped=$isServerStopped")
 
                     if (isAgyChat && isServerStopped && messages.isEmpty()) {
                         BoxWithConstraints(
