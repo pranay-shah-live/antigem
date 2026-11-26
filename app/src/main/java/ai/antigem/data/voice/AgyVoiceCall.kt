@@ -349,24 +349,30 @@ object AgyVoiceCall {
     fun sendText(text: String): Boolean {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return false
-        val s = session ?: return false
-        val sent = s.send(
+        val s = session
+        val sentToVoice = s?.send(
             VoiceClientMessage(
                 user_transcript = VoiceClientMessage.UserTranscript(
                     text = trimmed,
                     is_final = true
                 )
             )
-        )
-        if (sent) {
-            note(s, "Typed: $trimmed")
+        ) == true
+        // Forward typed command directly to the active chat so the agent receives it
+        val vm = ai.antigem.ui.chat.ChatViewModelHolder.peek()
+        if (vm != null) {
+            vm.sendMessage(trimmed)
+        }
+        if (sentToVoice || vm != null) {
+            if (s != null) note(s, "Typed: $trimmed")
             _state.update { st ->
                 val nextKey = (st.lines.lastOrNull()?.key ?: 0L) + 1L
                 val nextSeq = (st.lines.lastOrNull()?.seq ?: 0) + 1
                 st.copy(lines = (st.lines + Line(nextKey, Role.USER, nextSeq, trimmed, interim = false)).takeLast(40))
             }
+            return true
         }
-        return sent
+        return false
     }
 
     // ------------------------------------------------------------------------------------------------ hub

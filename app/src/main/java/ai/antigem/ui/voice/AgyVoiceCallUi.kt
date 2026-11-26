@@ -263,7 +263,7 @@ private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgy
 
             // ---- orb
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val side = minOf(maxWidth, maxHeight) * 0.92f
+                val side = minOf(maxWidth, maxHeight) * 0.78f
                 VoiceOrb(
                     voice = voice, phase = st.phase, muted = st.muted, agentWorking = agentWorking && st.phase == Phase.LIVE,
                     modifier = Modifier.size(side).clickable(
@@ -282,9 +282,78 @@ private fun CallContent(st: AgyVoiceCall.State, agentWorking: Boolean, onOpenAgy
                     onClose = { AgyVoiceCall.end() }
                 )
             } else if (captionsOn) {
-                Captions(st, voice, Modifier.fillMaxWidth().height(170.dp))
+                Captions(st, voice, Modifier.fillMaxWidth().height(130.dp))
             } else {
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // ---- text command input (between captions and controls)
+            if (st.phase != Phase.FAILED) {
+                Spacer(Modifier.height(10.dp))
+                val sendTyped = {
+                    if (AgyVoiceCall.sendText(typedCommand)) {
+                        typedCommand = ""
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color.White.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    runCatching { typeFocusRequester.requestFocus() }
+                                    keyboardController?.show()
+                                }
+                        ) {
+                            if (typedCommand.isEmpty()) {
+                                Text(
+                                    text = "Type a command to Gemini...",
+                                    color = Color.White.copy(alpha = 0.45f),
+                                    fontSize = 13.5.sp
+                                )
+                            }
+                            BasicTextField(
+                                value = typedCommand,
+                                onValueChange = { typedCommand = it },
+                                singleLine = true,
+                                textStyle = TextStyle(color = Color.White, fontSize = 13.5.sp),
+                                cursorBrush = SolidColor(rgb(voice.core)),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                keyboardActions = KeyboardActions(onSend = { sendTyped() }),
+                                modifier = Modifier.fillMaxWidth().focusRequester(typeFocusRequester)
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            onClick = { sendTyped() },
+                            shape = CircleShape,
+                            color = if (typedCommand.isNotBlank()) rgb(voice.core) else Color.White.copy(alpha = 0.14f),
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.Send,
+                                    contentDescription = "Send",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // ---- controls
