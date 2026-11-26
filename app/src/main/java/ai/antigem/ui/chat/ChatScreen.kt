@@ -123,13 +123,168 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ai.antigem.ui.cloud.cloudProjectsSection
 import ai.antigem.i18n.L
 
 enum class ScrollDirection { UP, DOWN }
+
+/**
+ * Keeps the end of the chat on screen while the agent works ([working]): the scroll is requested in the same
+ * composition as the new rows, so it applies in the same layout pass and the end never drops below the screen while a
+ * reply grows. It reads the auto-scroll and dragging flags itself: when they flip (every scroll starts and ends with
+ * them) only this recomposes, not the chat screen.
+ */
+@Composable
+private fun FollowTail(
+    listState: LazyListState,
+    // the rows themselves, not their count: a reply growing inside its last row makes a new list of the same size,
+    // and the end must be pinned again for it
+    rows: List<ChatFeedItem>,
+    working: Boolean,
+    shouldAutoScroll: () -> Boolean,
+    isUserDragging: () -> Boolean
+) {
+    if (rows.isNotEmpty() && working && shouldAutoScroll() && !isUserDragging()) {
+        SideEffect { listState.requestScrollToItem(rows.size) }
+    }
+}
+
+/** How often the chat screen takes message updates while the newest message is off screen (see [pacedMessages]). */
+private const val MESSAGE_PACE_MS = 250L
+
+/**
+ * The messages for the chat screen. While [slow] (no row of the newest message is on screen: the user reads older
+ * messages while a reply may be streaming), updates are passed on at most every [MESSAGE_PACE_MS], always the newest
+ * one: the screen and its list rebuild a few times a second instead of on every streamed word. Passed on at once:
+ * every update when not [slow], the first list, another chat's list, a list that got shorter or emptied (edit,
+ * rewind, reload), and the newest list the moment [slow] ends. Nothing is ever dropped: the last update always
+ * arrives, at most [MESSAGE_PACE_MS] late.
+ */
+private fun pacedMessages(
+    source: kotlinx.coroutines.flow.StateFlow<List<ChatMessage>>,
+    slow: () -> Boolean
+): kotlinx.coroutines.flow.Flow<List<ChatMessage>> = kotlinx.coroutines.flow.channelFlow {
+    var sent: List<ChatMessage>? = null
+    var sentAt = 0L
+    var timer: kotlinx.coroutines.Job? = null
+    suspend fun pass(list: List<ChatMessage>) {
+        sent = list
+        sentAt = android.os.SystemClock.uptimeMillis()
+        send(list)
+    }
+    launch {
+        // the newest message came on screen: what was held back follows at once
+        snapshotFlow { slow() }.collect { isSlow ->
+            if (!isSlow) {
+                timer?.cancel()
+                timer = null
+                val newest = source.value
+                if (newest !== sent) pass(newest)
+            }
+        }
+    }
+    source.collect { list ->
+        val last = sent
+        val urgent = last == null || !slow() || list.isEmpty() || last.isEmpty() || list.size < last.size ||
+            list.first().conversationId != last.first().conversationId
+        val wait = MESSAGE_PACE_MS - (android.os.SystemClock.uptimeMillis() - sentAt)
+        if (urgent || wait <= 0) {
+            timer?.cancel()
+            timer = null
+            pass(list)
+        } else if (timer == null) {
+            timer = launch {
+                delay(wait)
+                timer = null
+                pass(source.value)
+            }
+        }
+    }
+}
+
+/** The index of the first row of the newest message in [rows] (rows.size when no row belongs to a message). */
+private fun firstRowOfNewestMessage(rows: List<ChatFeedItem>): Int {
+    var newest: String? = null
+    var first = rows.size
+    for (i in rows.indices.reversed()) {
+        val id = rows[i].messageIdOrNull() ?: continue
+        if (newest == null) newest = id else if (id != newest) break
+        first = i
+    }
+    return first
+}
+
+/** The message a row belongs to (null for dividers and voice-call markers). */
+private fun ChatFeedItem.messageIdOrNull(): String? = when (this) {
+    is ChatFeedItem.AssistantBlock -> messageId
+    is ChatFeedItem.AssistantThinking -> messageId
+    is ChatFeedItem.AssistantTyping -> messageId
+    is ChatFeedItem.AssistantFooter -> message.id
+    is ChatFeedItem.StreamingMessage -> message.id
+    is ChatFeedItem.User -> message.id
+    is ChatFeedItem.Summary -> message.id
+    is ChatFeedItem.JarvisEvent -> message.id
+    is ChatFeedItem.StepGroup -> steps.firstOrNull()?.messageId
+    else -> null
+}
+
+/**
+ * The floating jump-to-top / jump-to-bottom button. It reads the scroll flags itself (shown, direction, at the top,
+ * at the bottom), so while scrolling only the button redraws when they change, not the chat screen.
+ */
+@Composable
+private fun ChatJumpButton(
+    showScrollButton: () -> Boolean,
+    scrollDirection: () -> ScrollDirection,
+    isAtTop: () -> Boolean,
+    isAtBottom: () -> Boolean,
+    rowCount: Int,
+    modifier: Modifier,
+    onJump: (toTop: Boolean) -> Unit
+) {
+    val showUpArrow = showScrollButton() && scrollDirection() == ScrollDirection.UP && !isAtTop()
+    val showDownArrow = showScrollButton() && scrollDirection() == ScrollDirection.DOWN && !isAtBottom()
+    val isVisible = (showUpArrow || showDownArrow) && rowCount > 2
+
+    androidx.compose.animation.AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn() + scaleIn(initialScale = 0.8f),
+        exit = fadeOut() + scaleOut(targetScale = 0.8f),
+        modifier = modifier
+    ) {
+        Surface(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .clickable { onJump(showUpArrow) },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            shadowElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Icon(
+                    imageVector = if (showUpArrow) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (showUpArrow) L.chat.screen.jumpToTop else L.chat.screen.jumpToBottom,
+                    tint = ClaudeTerracotta,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+    }
+}
 
 
 
@@ -258,7 +413,13 @@ fun ChatScreen(
             ai.antigem.ui.components.AppToastHelper.showToast(it, ai.antigem.ui.components.ChatToastType.INFO)
         }
     }
-    val messages by viewModel.messages.collectAsState()
+    // True while none of the newest message's rows is on screen (the user reads older messages while a reply may be
+    // streaming): the screen then takes message updates a few times a second instead of on every streamed word, so
+    // scrolling through older messages stays smooth (see pacedMessages). Set further down, from the list's layout.
+    val readingOlder = remember { mutableStateOf(false) }
+    val messagesSource = viewModel.messages
+    val messages by remember(messagesSource) { pacedMessages(messagesSource) { readingOlder.value } }
+        .collectAsState(initial = messagesSource.value)
     val artifacts by viewModel.artifacts.collectAsState()
     val selectedModelId by viewModel.selectedModelId.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
@@ -378,7 +539,6 @@ fun ChatScreen(
     val isLocalStopped = serverStatus is ai.antigem.data.local.LocalServerStatus.Stopped
     val isLocalError = serverStatus is ai.antigem.data.local.LocalServerStatus.Error
     var showRawPayloadDialog by remember { mutableStateOf<String?>(null) }
-    var quotedReplyText by remember { mutableStateOf<String?>(null) }
     var showChatTelemetryDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     // an error card's "Reconnect in Settings" (an OpenCode account the provider rejected)
@@ -961,14 +1121,52 @@ fun ChatScreen(
     // so another chat (or coming back) starts with every pill closed
     val openStepGroups = remember(currentConv?.id) { mutableStateMapOf<String, Boolean>() }
     val expandedStepGroups = openStepGroups.keys.toSet()
-    val feedItems = remember(messages, selectedModelId, modelNameOf, voiceCallItems, groupAgentSteps, groupStepsMin, expandedStepGroups) {
-        // the date and model dividers are always on
-        val items = ChatFeedCache.buildFeedItems(messages, selectedModelId, dividers = true, modelName = modelNameOf, voiceCalls = voiceCallItems)
-        StepGroups.apply(items, groupAgentSteps, groupStepsMin, expandedStepGroups, messages)
+    val convKey = currentConv?.id ?: "empty"
+
+    // The chat's rows are built off the main thread: parsing replies (a long one again on every update while it
+    // streams, or every message when a big chat opens) never holds up drawing. Updates that come while one is being
+    // built are merged: only the newest is built. The rows arrive with the messages they were made from (FeedSnapshot),
+    // and everything below that compares messages with rows reads that snapshot, so the two never disagree.
+    val feedInput = remember(convKey, messages, selectedModelId, modelNameOf, voiceCallItems) {
+        FeedInput(convKey, messages, selectedModelId, modelNameOf, voiceCallItems)
+    }
+    val latestFeedInput by rememberUpdatedState(feedInput)
+    var builtFeed by remember { mutableStateOf<FeedSnapshot?>(null) }
+    LaunchedEffect(Unit) {
+        snapshotFlow { latestFeedInput }
+            .conflate()
+            .collect { input ->
+                val built = withContext(Dispatchers.Default) {
+                    try {
+                        FeedSnapshot.build(input)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("ChatScreen", "Could not build the chat's rows", e)
+                        null
+                    }
+                }
+                if (built != null) builtFeed = built
+            }
+    }
+    // rows built while this chat had no messages yet (the moment it opened) don't count once its messages are here:
+    // the loading view stays until the real rows exist, never an empty list in between
+    val builtForThisChat = builtFeed?.takeIf { it.convKey == convKey && (it.messages.isNotEmpty() || messages.isEmpty()) }
+    // no rows for this chat yet (it was just opened): when every message is parsed already (coming back to it) they
+    // are built right here, so there is never a frame without them; otherwise the loading view shows until they come
+    val instantFeed = remember(feedInput, builtForThisChat == null) {
+        if (builtForThisChat == null && ChatFeedCache.allParsed(messages)) FeedSnapshot.build(feedInput) else null
+    }
+    val feedSnapshot = builtForThisChat ?: instantFeed
+    /** The messages the rows on screen were made from (the live [messages] may be a frame ahead). */
+    val rowMessages = feedSnapshot?.messages ?: emptyList()
+    val feedNotReady = feedSnapshot == null && messages.isNotEmpty()
+    // folding steps into pills parses nothing: done here, so opening or closing a pill is instant
+    val feedItems = remember(feedSnapshot, groupAgentSteps, groupStepsMin, expandedStepGroups) {
+        StepGroups.apply(feedSnapshot?.rows ?: emptyList(), groupAgentSteps, groupStepsMin, expandedStepGroups, rowMessages)
     }
 
     // Fresh LazyListState per conversation — restores saved position if returning, or initializes directly at bottom
-    val convKey = currentConv?.id ?: "empty"
     val hasFeedItems = feedItems.isNotEmpty()
     val initialSavedPos = remember(convKey) { ConversationScrollCache.get(convKey) }
     val listState = remember(convKey, hasFeedItems) {
@@ -985,7 +1183,7 @@ fun ChatScreen(
     }
 
     // Determine whether user is scrolled near the bottom (within the last item)
-    val isAtBottom by remember(listState) {
+    val isAtBottomState = remember(listState) {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
             val totalItems = layoutInfo.totalItemsCount
@@ -998,6 +1196,24 @@ fun ChatScreen(
                 }
             }
         }
+    }
+    val isAtBottom by isAtBottomState
+
+    // The rows, the list and "at bottom" as they are right now, for actions that run on a tap (opening a link, a Jarvis
+    // card, editing a prompt): read when tapped, so those actions are made once and don't change on every update
+    val linkRows by rememberUpdatedState(feedItems)
+    val linkListState by rememberUpdatedState(listState)
+    val linkAtBottomState by rememberUpdatedState(isAtBottomState)
+    val latestRowMessages by rememberUpdatedState(rowMessages)
+
+    // C: is any row of the newest message on screen? While none is, message updates are paced (see readingOlder)
+    val newestMessageFirstRow = remember(feedItems) { firstRowOfNewestMessage(feedItems) }
+    LaunchedEffect(listState, newestMessageFirstRow) {
+        snapshotFlow {
+            // nothing laid out yet counts as on screen: updates are never held back while a chat opens
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: Int.MAX_VALUE
+            lastVisible < newestMessageFirstRow
+        }.collect { readingOlder.value = it }
     }
 
     val isAtTop by remember(listState) {
@@ -1109,18 +1325,23 @@ fun ChatScreen(
         }
     }
 
-    // Re-enable auto-scroll whenever the user scrolls back to the bottom
-    LaunchedEffect(isAtBottom) {
-        if (isAtBottom) {
-            shouldAutoScroll = true
+    // Re-enable auto-scroll whenever the user scrolls back to the bottom. Watched as a flow, not read by the screen:
+    // a flag read here would rebuild the whole screen each time it flips while scrolling
+    LaunchedEffect(listState) {
+        snapshotFlow { isAtBottomState.value }.collect { atBottom ->
+            if (atBottom) {
+                shouldAutoScroll = true
+            }
         }
     }
 
-    // Hide scroll button after scroll stops
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (!listState.isScrollInProgress && showScrollButton) {
-            delay(4000)
-            showScrollButton = false
+    // Hide scroll button after scroll stops (a new scroll cancels the wait, as before)
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collectLatest { scrolling ->
+            if (!scrolling && showScrollButton) {
+                delay(4000)
+                showScrollButton = false
+            }
         }
     }
 
@@ -1146,16 +1367,29 @@ fun ChatScreen(
     }
 
 
-    // Scroll to bottom when user explicitly sends a message (instant)
+    // Scroll to bottom when user explicitly sends a message (instant), and once more when the rows hold the prompt
+    // just sent (they are built off the main thread, so it may come a frame later); given up after a few seconds
+    var promptsAtSend by remember(convKey) { mutableStateOf(-1) }
     LaunchedEffect(userSentMessageTrigger) {
-        if (userSentMessageTrigger > 0 && feedItems.isNotEmpty()) {
+        if (userSentMessageTrigger > 0) {
             shouldAutoScroll = true
+            promptsAtSend = rowMessages.count { it.role == ai.antigem.domain.model.MessageRole.USER }
+            if (feedItems.isNotEmpty()) listState.scrollToItem(feedItems.size)
+            delay(3_000)
+            promptsAtSend = -1
+        }
+    }
+    LaunchedEffect(feedSnapshot) {
+        val before = promptsAtSend
+        if (before >= 0 && feedItems.isNotEmpty() &&
+            rowMessages.count { it.role == ai.antigem.domain.model.MessageRole.USER } > before) {
+            promptsAtSend = -1
             listState.scrollToItem(feedItems.size)
         }
     }
 
     // Smart auto-scroll during streaming & tool execution: follows live stream and tool calls smoothly without getting stuck
-    val lastMsg = messages.lastOrNull()
+    val lastMsg = rowMessages.lastOrNull()
     val lastToolCalls = lastMsg?.toolCalls.orEmpty()
     val isRunningOrStreaming = isActivelyRunning || (lastMsg?.isStreaming == true)
 
@@ -1187,10 +1421,13 @@ fun ChatScreen(
 
     // Applied in the same layout pass as the new content (not a frame later), so the end of the chat (the working
     // row) never drops below the screen while the reply grows: the output grows above it
-    val followTail = feedItems.isNotEmpty() && (isRunningOrStreaming || tailFinishing) && shouldAutoScroll && !isUserDragging
-    if (followTail) {
-        SideEffect { listState.requestScrollToItem(feedItems.size) }
-    }
+    FollowTail(
+        listState = listState,
+        rows = feedItems,
+        working = isRunningOrStreaming || tailFinishing,
+        shouldAutoScroll = { shouldAutoScroll },
+        isUserDragging = { isUserDragging }
+    )
 
     // The Claude Code-style working row: under the reply for as long as the agent works, but not while it waits for
     // the user (an approval or a question)
@@ -1259,15 +1496,18 @@ fun ChatScreen(
     }
 
     /** Opens a chat Jarvis points at (a task of its team) and keeps the way back to the Jarvis chat. */
-    val openJarvisLinkedChat: (String) -> Unit = { targetId ->
-        val currentId = currentConv?.id
-        if (!currentId.isNullOrBlank() && !currentId.equals(targetId, ignoreCase = true)) {
-            if (feedItems.isNotEmpty()) {
-                ConversationScrollCache.save(currentId, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, isAtBottom)
+    // made once (it goes to the Jarvis cards in the list): reads the chat, rows and scroll position when tapped
+    val openJarvisLinkedChat: (String) -> Unit = remember(viewModel, conversationBackStack) {
+        { targetId ->
+            val currentId = currentConv?.id
+            if (!currentId.isNullOrBlank() && !currentId.equals(targetId, ignoreCase = true)) {
+                if (linkRows.isNotEmpty()) {
+                    ConversationScrollCache.save(currentId, linkListState.firstVisibleItemIndex, linkListState.firstVisibleItemScrollOffset, linkAtBottomState.value)
+                }
+                conversationBackStack.add(currentId)
             }
-            conversationBackStack.add(currentId)
+            viewModel.selectConversation(targetId)
         }
-        viewModel.selectConversation(targetId)
     }
     val navigateBackConversation: () -> Unit = {
         while (conversationBackStack.isNotEmpty()) {
@@ -1317,7 +1557,11 @@ fun ChatScreen(
         }
     )
 
-    val fileLinkHandler = remember(scope, conversations, currentConv?.id, listState, feedItems.size, isAtBottom) {
+    // What the link handler needs, as it is when a link is tapped. The handler itself is made once: it goes to every
+    // row through a static composition local, so a new one rebuilt the whole screen (it was made again whenever
+    // "at bottom" flipped, a row was added or the chat list refreshed, which made scrolling and streaming stutter)
+    val linkFileOpener by rememberUpdatedState(fileLinkOpener)
+    val fileLinkHandler = remember(scope) {
         FileLinkHandler(
             onOpenFile = { rawUrl ->
                 try {
@@ -1335,7 +1579,7 @@ fun ChatScreen(
                             activeMarkdownDoc = cleanPath to content
                         }
                     } else {
-                        fileLinkOpener.open(cleanPath)
+                        linkFileOpener.open(cleanPath)
                     }
                 } catch (e: Exception) {
                     Log.e("ChatScreen", "Error opening file link $rawUrl", e)
@@ -1352,8 +1596,8 @@ fun ChatScreen(
                 if (target != null) {
                     val currentId = currentConv?.id
                     if (!currentId.isNullOrBlank() && !currentId.equals(target.id, ignoreCase = true)) {
-                        if (feedItems.isNotEmpty()) {
-                            ConversationScrollCache.save(currentId, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, isAtBottom)
+                        if (linkRows.isNotEmpty()) {
+                            ConversationScrollCache.save(currentId, linkListState.firstVisibleItemIndex, linkListState.firstVisibleItemScrollOffset, linkAtBottomState.value)
                         }
                         conversationBackStack.add(currentId)
                     }
@@ -1431,6 +1675,7 @@ fun ChatScreen(
                 onRetry = { viewModel.retryConnections() },
                 isOpen = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open,
                 onSelectConversation = { id ->
+                    Log.d("CHAT_OPEN_DEBUG", "🎯 [ChatScreen] User selected conversation: id=$id")
                     val currentId = currentConv?.id
                     if (!currentId.isNullOrBlank() && feedItems.isNotEmpty()) {
                         ConversationScrollCache.save(currentId, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, isAtBottom)
@@ -2085,7 +2330,10 @@ fun ChatScreen(
                     // agy missing: the hub's "agy is not installed" error is also this chat's error, and an existing chat
                     // never finishes loading. Both step aside for the empty view's "not installed" card with Install.
                     val agyMissingHere = isAgyChat && agyNotInstalled
-                    val isExistingChat = messages.isEmpty() && isExistingConversation && isLoadingConversation && !agyMissingHere
+                    val isExistingChat = (messages.isEmpty() && isExistingConversation && isLoadingConversation && !agyMissingHere) ||
+                        // the messages are here but their rows are still being built (a big chat just opened)
+                        feedNotReady
+                    Log.d("CHAT_OPEN_DEBUG", "🖥️ [ChatScreen Render] convId=${currentConv?.id}, title='${currentConv?.title}', isLoading=$isLoadingConversation, isExisting=$isExistingChat, msgCount=${messages.size}, error=$conversationError, isServerStopped=$isServerStopped")
 
                     if (isAgyChat && isServerStopped && messages.isEmpty()) {
                         BoxWithConstraints(
@@ -2382,14 +2630,17 @@ fun ChatScreen(
                                             onOpenChat = openJarvisLinkedChat
                                         )
                                         is ChatFeedItem.User -> {
-                                            val msgIndex = messages.indexOfFirst { it.id == feedItem.message.id }
-                                            val willDeleteOutput = msgIndex < messages.lastIndex
                                             UserMessageBubble(
                                                 message = feedItem.message,
                                                 isLastUserMessage = true,
                                                 isDevModeEnabled = isDevModeEnabled,
                                                 canEdit = !isReadOnlyChat,
                                                 onEdit = { targetMsg ->
+                                                    // asks first when replies follow this prompt (editing deletes them):
+                                                    // judged on the messages on screen when tapped, so the row doesn't
+                                                    // depend on the message list (it changes on every streamed word)
+                                                    val rows = latestRowMessages
+                                                    val willDeleteOutput = rows.indexOfFirst { it.id == feedItem.message.id } < rows.lastIndex
                                                     if (willDeleteOutput) {
                                                         pendingMessageAction = PendingMessageAction(MessageActionType.EDIT, targetMsg)
                                                     } else {
@@ -2517,6 +2768,8 @@ fun ChatScreen(
                                             ai.antigem.ui.components.AgentWorkingSpinner(
                                                 color = if (isClaudeChat) ai.antigem.ui.components.ClaudeAccent else if (isOpenCodeChat) ai.antigem.ui.components.OpenCodeAccent else if (isCodexChat) ai.antigem.ui.components.CodexAccent else ai.antigem.ui.components.AgyAccent,
                                                 compacting = isClaudeChat && claudeCompacting,
+                                                // "Clauding" only in Claude chats
+                                                claude = isClaudeChat,
                                                 // leaves in the frame the reply's footer arrives, which fades in in its place
                                                 modifier = Modifier.animateItem(fadeInSpec = tween(180), placementSpec = null, fadeOutSpec = null)
                                             )
@@ -2531,52 +2784,28 @@ fun ChatScreen(
                         }
                     }
 
-                    // Floating Scroll Up / Scroll Down Button (Instant Movement)
-                    val showUpArrow = showScrollButton && scrollDirection == ScrollDirection.UP && !isAtTop
-                    val showDownArrow = showScrollButton && scrollDirection == ScrollDirection.DOWN && !isAtBottom
-                    val isVisible = (showUpArrow || showDownArrow) && feedItems.size > 2
-                                            
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = isVisible,
-                        enter = fadeIn() + scaleIn(initialScale = 0.8f),
-                        exit = fadeOut() + scaleOut(targetScale = 0.8f),
+                    // Floating Scroll Up / Scroll Down Button (Instant Movement). It reads the scroll flags itself, so only
+                    // the button redraws when they change, not this whole area (see ChatJumpButton)
+                    ChatJumpButton(
+                        showScrollButton = { showScrollButton },
+                        scrollDirection = { scrollDirection },
+                        isAtTop = { isAtTop },
+                        isAtBottom = { isAtBottom },
+                        rowCount = feedItems.size,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 16.dp, bottom = 12.dp)
-                    ) {
-                        Surface(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .clickable {
-                                    showScrollButton = false
-                                    scope.launch {
-                                        if (showUpArrow) {
-                                            listState.scrollToItem(0)
-                                        } else {
-                                            listState.scrollToItem(feedItems.size)
-                                        }
-                                    }
-                                },
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 6.dp,
-                            shadowElevation = 6.dp,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Icon(
-                                    imageVector = if (showUpArrow) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = if (showUpArrow) L.chat.screen.jumpToTop else L.chat.screen.jumpToBottom,
-                                    tint = ClaudeTerracotta,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                            .padding(end = 16.dp, bottom = 12.dp),
+                        onJump = { toTop ->
+                            showScrollButton = false
+                            scope.launch {
+                                if (toTop) {
+                                    listState.scrollToItem(0)
+                                } else {
+                                    listState.scrollToItem(feedItems.size)
+                                }
                             }
                         }
-                    }
+                    )
 
                     // Floating Slash Commands & Skills Autocomplete Suggestions
                     val slash = slashTrigger
@@ -2600,10 +2829,8 @@ fun ChatScreen(
                     }
 
                     // `/plu:` browses custom AntiGem plugins and their skills; custom commands join the normal list
-                    // Only copy these while the menu is open: a fresh list on every stream frame would change the
-                    // remember key below and rebuild the whole suggestion list (and its base commands) each time.
-                    val customCommands = if (isSlashActive) ai.antigem.data.remote.CustomSlashCommands.commands.toList() else emptyList()
-                    val installedPlugins = if (isSlashActive) ai.antigem.ui.browser.BrowserExtensionManager.instance.extensions.toList() else emptyList()
+                    val customCommands = ai.antigem.data.remote.CustomSlashCommands.commands.toList()
+                    val installedPlugins = ai.antigem.ui.browser.BrowserExtensionManager.instance.extensions.toList()
                     val slashSuggestions = remember(slashQuery, effectiveSlashCommands, isSlashActive, customCommands, installedPlugins) {
                         if (!isSlashActive) emptyList()
                         else if (slashQuery.startsWith("plu:", ignoreCase = true)) ai.antigem.data.remote.PromptExpansion.pluginSuggestions(slashQuery.substring(4))
@@ -3049,14 +3276,7 @@ fun ChatScreen(
                         if (appCmd != null) {
                             handleClaudeCommand(appCmd)
                         } else {
-                            val finalMessage = if (!quotedReplyText.isNullOrBlank()) {
-                                val quotedBlock = quotedReplyText!!.trim().lines().joinToString("\n") { "> $it" }
-                                "$quotedBlock\n\n$text"
-                            } else {
-                                text
-                            }
-                            viewModel.sendMessage(finalMessage)
-                            quotedReplyText = null
+                            viewModel.sendMessage(text)
                             userSentMessageTrigger++
                         }
                         viewModel.clearDraft(activeConversationKey)
@@ -3081,8 +3301,6 @@ fun ChatScreen(
                     focusRequester = chatInputFocusRequester,
                     queuedMessages = queuedMessages,
                     onSendQueuedNow = { viewModel.sendQueuedNow(it) },
-                    quotedText = quotedReplyText,
-                    onClearQuote = { quotedReplyText = null },
                     onDeleteQueued = { viewModel.deleteQueued(it) },
                     onStartVoiceCall = if (isAgyChat) onStartVoiceCall else null,
                     voiceCallActive = voiceCall.active
@@ -3765,11 +3983,7 @@ fun ChatScreen(
     if (showRawPayloadDialog != null) {
         RawPayloadDialog(
             payloadJson = showRawPayloadDialog!!,
-            onDismiss = { showRawPayloadDialog = null },
-            onQuote = { selected ->
-                quotedReplyText = selected
-                chatInputFocusRequester.requestFocus()
-            }
+            onDismiss = { showRawPayloadDialog = null }
         )
     }
 

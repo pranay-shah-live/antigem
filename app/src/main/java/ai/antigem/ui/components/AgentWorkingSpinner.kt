@@ -47,10 +47,25 @@ private val VERBS get() = listOf(
 )
 
 /**
+ * The verbs one agent's working row picks from: "Clauding" only in a Claude chat, every other verb for every agent.
+ */
+private fun verbsFor(claude: Boolean): List<String> =
+    if (claude) VERBS else VERBS.filter { it != L.components.agentWorkingSpinner.clauding }
+
+/**
  * Room for the longest verb (or "Compacting") plus "...", in the current language: the row never changes width.
  * Worked out each time, not once: the language (and so the longest text) can change while the app runs.
  */
 private fun textWidth() = (VERBS + L.components.agentWorkingSpinner.compacting2).maxOf { it.length } + 3
+
+/**
+ * The width (px) of the widest text the row can show, per text setup (density, font scale, language): the same for
+ * every working row, so it is measured once for the app's life. The word style is fixed (only its color changes).
+ */
+private val wordWidthCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+/** The glyphs laid out, per text setup and color (a handful of entries for the app's life). */
+private val glyphLayoutCache = java.util.concurrent.ConcurrentHashMap<String, List<androidx.compose.ui.text.TextLayoutResult>>()
 
 private const val GLYPH_STEP_MS = 120L
 private const val DECODE_FRAME_MS = 40L
@@ -67,7 +82,13 @@ private const val WORD_DELAY_MS = 5_000L
  * on fixed baselines, so nothing moves up and down when a glyph or character comes from another font.
  */
 @Composable
-fun AgentWorkingSpinner(color: Color, modifier: Modifier = Modifier, compacting: Boolean = false) {
+fun AgentWorkingSpinner(
+    color: Color,
+    modifier: Modifier = Modifier,
+    compacting: Boolean = false,
+    /** A Claude chat: "Clauding" is one of the verbs (other agents never show it). */
+    claude: Boolean = false
+) {
     val measurer = rememberTextMeasurer(cacheSize = 64)
     // a quiet status line (like VS Code's softened foreground); the accent-colored star is what draws the eye
     val textColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
@@ -76,11 +97,18 @@ fun AgentWorkingSpinner(color: Color, modifier: Modifier = Modifier, compacting:
     val density = LocalDensity.current
     val language = LocalLanguageVersion.current
 
-    // measured once: every glyph, and the widest text the row can show (again when the language changes)
-    val glyphLayouts = remember(measurer, glyphStyle) { GLYPHS.map { measurer.measure(it, glyphStyle) } }
+    // measured once per text setup for the app's life (not each time the row appears: measuring every verb took
+    // 40-90 ms whenever a turn started or the row came back on screen): every glyph, and the widest text the row can
+    // show (again when the language, the text size or the screen density changes)
+    val setup = "${density.density}|${density.fontScale}|$language"
+    val glyphLayouts = remember(measurer, glyphStyle, setup) {
+        glyphLayoutCache.getOrPut("$setup|${glyphStyle.color}") { GLYPHS.map { measurer.measure(it, glyphStyle) } }
+    }
     val wordRef = remember(measurer, wordStyle, language) { measurer.measure(L.components.agentWorkingSpinner.compacting, wordStyle) }
-    val wordWidth = remember(measurer, wordStyle, language) {
-        (VERBS + L.components.agentWorkingSpinner.compacting2).maxOf { measurer.measure("$it...", wordStyle).size.width } + measurer.measure("▌", wordStyle).size.width
+    val wordWidth = remember(measurer, wordStyle, setup) {
+        wordWidthCache.getOrPut(setup) {
+            (VERBS + L.components.agentWorkingSpinner.compacting2).maxOf { measurer.measure("$it...", wordStyle).size.width } + measurer.measure("▌", wordStyle).size.width
+        }
     }
     val glyphBox = remember(glyphLayouts) { glyphLayouts.maxOf { it.size.width } }
     val gapPx = with(density) { 4.dp.roundToPx() }
@@ -91,7 +119,7 @@ fun AgentWorkingSpinner(color: Color, modifier: Modifier = Modifier, compacting:
     val glyphStep = remember { mutableIntStateOf(0) }
     val shown = remember { mutableStateOf(" ".repeat(textWidth())) }
     GlyphTicker(glyphStep)
-    WordDecoder(shown, compacting, language)
+    WordDecoder(shown, compacting, language, claude)
 
     Canvas(
         modifier
@@ -118,18 +146,19 @@ private fun GlyphTicker(step: androidx.compose.runtime.MutableIntState) {
 }
 
 @Composable
-private fun WordDecoder(shown: androidx.compose.runtime.MutableState<String>, compacting: Boolean, language: Int) {
-    var verb by remember { mutableStateOf(VERBS.random()) }
+private fun WordDecoder(shown: androidx.compose.runtime.MutableState<String>, compacting: Boolean, language: Int, claude: Boolean) {
+    var verb by remember { mutableStateOf(verbsFor(claude).random()) }
+    val claudeNow by androidx.compose.runtime.rememberUpdatedState(claude)
     LaunchedEffect(Unit) {
         var changes = 0
         while (true) {
             delay(WORD_DELAYS_MS.getOrElse(changes) { WORD_DELAY_MS })
             changes++
-            verb = VERBS.random()
+            verb = verbsFor(claudeNow).random()
         }
     }
-    // a new language: a verb in it right away, not after the next change
-    LaunchedEffect(language) { if (verb !in VERBS) verb = VERBS.random() }
+    // a new language (or another agent): a verb it can show right away, not after the next change
+    LaunchedEffect(language, claude) { if (verb !in verbsFor(claude)) verb = verbsFor(claude).random() }
     // A cursor runs over the old text; the three characters behind it flicker through '.' and '_' before settling.
     LaunchedEffect(verb, compacting, language) {
         val target = ((if (compacting) L.components.agentWorkingSpinner.compacting2 else verb) + "...").padEnd(textWidth())

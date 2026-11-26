@@ -26,6 +26,7 @@ import ai.antigem.ui.chat.ChatViewModel
 import ai.antigem.ui.chat.ChatViewModelHolder
 import ai.antigem.ui.ide.IdeScreen
 import ai.antigem.ui.components.pageSnapshotSource
+import ai.antigem.ui.components.hiddenWhileOffscreen
 import ai.antigem.i18n.L
 
 enum class AppViewMode {
@@ -37,7 +38,7 @@ enum class AppViewMode {
     FILES,
     /** The Run screen: a folder's commands and their live output (runs keep going on other screens) */
     RUN
-}
+} 
 
 class MainActivity : ComponentActivity() {
 
@@ -383,6 +384,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                         // its drawing, for its picture in the page overview (without the floating pills over it)
                                         .pageSnapshotSource(AppViewMode.CHAT, pageOverviewInUse)
+                                        // hidden: out of TalkBack's and the keyboard's reach (draws the same)
+                                        .hiddenWhileOffscreen(currentViewMode == AppViewMode.CHAT)
                                 ) {
                                     ChatScreen(
                                         viewModel = chatViewModel,
@@ -421,6 +424,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                         // its drawing, for its picture in the page overview (without the floating pills over it)
                                         .pageSnapshotSource(AppViewMode.IDE, pageOverviewInUse)
+                                        // hidden: out of TalkBack's and the keyboard's reach (draws the same)
+                                        .hiddenWhileOffscreen(currentViewMode == AppViewMode.IDE)
                                 ) {
                                     IdeScreen(
                                         viewModel = chatViewModel,
@@ -454,6 +459,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                         // its drawing, for its picture in the page overview (without the floating pills over it)
                                         .pageSnapshotSource(AppViewMode.TERMINAL, pageOverviewInUse)
+                                        // hidden: out of TalkBack's and the keyboard's reach (draws the same)
+                                        .hiddenWhileOffscreen(currentViewMode == AppViewMode.TERMINAL)
                                 ) {
                                     if (currentViewMode == AppViewMode.TERMINAL || (hasEverOpenedTerminal && terminalSessions.isNotEmpty())) {
                                         ai.antigem.ui.components.LocalTerminalContent(
@@ -483,6 +490,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                         // its drawing, for its picture in the page overview (without the floating pills over it)
                                         .pageSnapshotSource(AppViewMode.BROWSER, pageOverviewInUse)
+                                        // hidden: out of TalkBack's and the keyboard's reach (draws the same)
+                                        .hiddenWhileOffscreen(currentViewMode == AppViewMode.BROWSER)
                                 ) {
                                     BrowserScreen(
                                         isVisible = currentViewMode == AppViewMode.BROWSER,
@@ -504,6 +513,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                         // its drawing, for its picture in the page overview (without the floating pills over it)
                                         .pageSnapshotSource(AppViewMode.NOTES, pageOverviewInUse)
+                                        // hidden: out of TalkBack's and the keyboard's reach (draws the same)
+                                        .hiddenWhileOffscreen(currentViewMode == AppViewMode.NOTES)
                                 ) {
                                     ai.antigem.ui.notes.NotesScreen(
                                         isVisible = currentViewMode == AppViewMode.NOTES,
@@ -527,6 +538,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                         // its drawing, for its picture in the page overview (without the floating pills over it)
                                         .pageSnapshotSource(AppViewMode.FILES, pageOverviewInUse)
+                                        // hidden: out of TalkBack's and the keyboard's reach (draws the same)
+                                        .hiddenWhileOffscreen(currentViewMode == AppViewMode.FILES)
                                 ) {
                                     if (hasEverOpenedFiles) {
                                         ai.antigem.ui.files.FileExplorer(
@@ -583,6 +596,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                         // its drawing, for its picture in the page overview (without the floating pills over it)
                                         .pageSnapshotSource(AppViewMode.RUN, pageOverviewInUse)
+                                        // hidden: out of TalkBack's and the keyboard's reach (draws the same)
+                                        .hiddenWhileOffscreen(currentViewMode == AppViewMode.RUN)
                                 ) {
                                     if (hasEverOpenedRun) {
                                         ai.antigem.ui.run.RunScreen(
