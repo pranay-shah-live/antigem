@@ -117,7 +117,10 @@ object AgyVoiceBubble : LifecycleOwner, SavedStateRegistryOwner {
         lastPhase = st.phase
         // the app shows the call itself; leaving it again shows the circle
         if (appVisible && st.active && st.phase != AgyVoiceCall.Phase.FAILED) setExpanded(false)
-        if (st.active && on && !appVisible && !hiddenByUser) show() else hide()
+        // The floating bubble should only show when the call is active AND minimized,
+        // or when outside the app (!appVisible). When in full-screen inside the app, the bubble is hidden.
+        val shouldShowBubble = st.active && on && !hiddenByUser && (!appVisible || st.minimized)
+        if (shouldShowBubble) show() else hide()
     }
 
     private fun setExpanded(open: Boolean) {
