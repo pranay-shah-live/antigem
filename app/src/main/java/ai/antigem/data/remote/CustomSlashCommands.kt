@@ -98,20 +98,13 @@ object CustomSlashCommands {
             name = "automation",
             description = "Control this phone (read the screen, tap, type, open apps) with the Android Automation MCP",
             expansion = """
-                Use Android Automation to do this on the user's phone: ${'$'}ARGUMENTS
-                If that is empty or unclear, first ask the user what they want done, then continue.
+                Use Android Automation (`android_*` tools) to do this on the user's phone now: ${'$'}ARGUMENTS
+                If empty or unclear, ask the user first.
 
-                1. Check that you have the Android Automation MCP: its tools start with android_ (server android_automation_mcp), such as android_get_ui_tree, android_screenshot and android_tap. It might not be set up yet. If you don't have these tools, or they return an error saying a permission is missing, stop and tell the user how to set it up:
-                   - Allow it: open AntiGem → Settings → Android Automation, tap "Open Accessibility" and turn on "AntiGem Android Automation". On Android 13+, if the switch is greyed out ("Restricted setting"), tap "Open App info" on that page, then ⋮ (top right) → Allow restricted settings, and try again. If shell access is set up, the "Turn on with ADB / Shizuku / Root" button on that page does it in one tap.
-                   - Optional: for key presses, installing, uninstalling, force-stopping apps and shell commands, set up shell access in AntiGem → Settings → ADB Connect: ADB (Wireless debugging), Shizuku or Root.
-                   - Add the MCP. For Antigravity: Settings → MCP Servers & Tools, tap the "Android Automation" preset, and save. For Claude Code: Settings → Claude Code → MCP servers, and tap the "Android Automation" preset.
-                   - Then reload the tools or start a new chat, and send this command again.
-                   Don't try to do the task another way while the tools are missing.
-                2. Start with android_get_status. If the screen is off or locked, ask the user to unlock the phone.
-                3. Look before you act: android_get_ui_tree for elements and their ids, android_screenshot when you need to see the screen. Open apps with android_launch_app (android_list_apps to find the package).
-                4. Act with element ids from the latest tree (android_tap, android_type_text, android_scroll), and read the tree again after each step, since ids change whenever the screen does. If a tool says ADB is needed, tell the user how to connect it as above.
-                5. Ask the user before anything destructive or outward-facing: uninstalling apps, deleting data, sending messages or emails, calls, payments, or changing security settings.
-                6. Finish with what you did and the state the phone is in now.
+                1. Immediate task: use `android_*` tools directly from your tool catalog (do not grep/search files to check availability). If `android_*` tools are missing or report a permission error, stop that action and guide the user to AntiGem → Settings → Android Automation (or MCP Servers / ADB Connect).
+                2. Speed & routing: skip `android_get_status` unless lock/screen state matters. Prefer dedicated `android_*` APIs (`android_launch_app(package=...)`, alarms, timers, notifications, media, calls). Use `android_get_ui_tree` only for app-specific flows (one snapshot per state change), `android_screenshot` only for unlabeled UI, and shell only as a last resort.
+                3. Batching & JEV: batch independent read-only calls; sequence dependent actions. Use `jev_batch` (5+ items) or `jev_ask(compact=true)` (2+ criteria on one item) for judgment only, auto-acting at `confidence >= 0.75`. Never use JEV for deterministic actions.
+                4. Safety & return: ask before uninstalling, deleting, sending messages/email, calls, payments, posting, purchasing, or security changes. Verify the final state and return to AntiGem (`ai.antigem`) unless asked to leave another app open.
             """.trimIndent()
         )
     )

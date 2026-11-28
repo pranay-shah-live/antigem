@@ -1,8 +1,10 @@
 {
-  "version_code": 2050008,
-  "version_name": "F2.0.5-update7",
+  "version_code": 2050009,
+  "version_name": "F2.0.5-update8",
   "min_supported_version_code": 2,
   "changelog": [
+    "Optimize automation assistant: include_tree on actions & add android_run_steps composite tool",
+    "Streamline /automation slash command and token efficiency",
     "Merged upstream 2.0.5-beta.10: Private Space, Settings → Troubleshoot, IDE HTML preview and full path bar, provider chips, in-app language updates, TalkBack improvements, and crash/attachment/terminal fixes.",
     "Kept fork features: 1-shot assistant tools, quote selected text, voice Type input, floating overlay controls, clickable file paths, crash diagnostics, native package installer, and fork release versioning."
   ],

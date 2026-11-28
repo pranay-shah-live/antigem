@@ -159,20 +159,23 @@ object AndroidAutomation {
             elementId,
             "x" to prop("number", "Screen x in pixels, when no element_id"),
             "y" to prop("number", "Screen y in pixels, when no element_id"),
-            "long_press" to prop("boolean", "Long-press instead of tap")
+            "long_press" to prop("boolean", "Long-press instead of tap"),
+            "include_tree" to prop("boolean", "Append compact UI tree after action to avoid a separate android_get_ui_tree call")
         ))
         put(tool("android_type_text", "Type into a text field: the given element, or the focused field. Replaces its text unless append is true.",
             listOf("text"),
             "text" to prop("string", "Text to type"),
             elementId,
             "append" to prop("boolean", "Add to the existing text instead of replacing it"),
-            "submit" to prop("boolean", "Press the keyboard's enter/search/send action afterwards")
+            "submit" to prop("boolean", "Press the keyboard's enter/search/send action afterwards"),
+            "include_tree" to prop("boolean", "Append compact UI tree after action to avoid a separate android_get_ui_tree call")
         ))
         put(tool("android_scroll", "Scroll a list or page. direction is where to move the view: down shows content further down.",
             listOf("direction"),
             "direction" to prop("string", "Which way to scroll", listOf("up", "down", "left", "right")),
             elementId.first to prop("string", "Scrollable element (or a child of one) from the latest tree; omit to swipe across the middle of the screen"),
-            "distance" to prop("number", "When swiping: fraction of the screen to move, 0.1-0.9 (default 0.5)")
+            "distance" to prop("number", "When swiping: fraction of the screen to move, 0.1-0.9 (default 0.5)"),
+            "include_tree" to prop("boolean", "Append compact UI tree after action to avoid a separate android_get_ui_tree call")
         ))
         put(tool("android_swipe", "Swipe from one point to another in screen pixels (drag, pull to refresh, sliders).",
             listOf("x1", "y1", "x2", "y2"),
@@ -246,6 +249,11 @@ object AndroidAutomation {
             "number" to prop("string", "Exact phone number to call when confirming a specific number from multiple matches"),
             "confirm" to prop("boolean", "Must be true to actually place the call via ACTION_CALL; false/omitted only looks up and confirms")
         ))
+        put(tool("android_run_steps", "Execute multiple UI/app steps in one call (launch, wait, tap, type, scroll, back, home) to avoid multi-turn round-trips.",
+            listOf("steps"),
+            "steps" to prop("array", "List of step objects, each with 'action' (launch|wait|tap|type|scroll|back|home) and its parameters"),
+            "include_tree" to prop("boolean", "Append compact UI tree after the final step (default true)")
+        ))
         put(tool("android_call_control",
             "Toggle speakerphone or microphone mute during a call using AudioManager.",
             emptyList(),
@@ -296,6 +304,39 @@ object AndroidAutomation {
     private fun error(message: String) = text(message).put("isError", true)
     private fun staleElement(id: String) = error("Element $id isn't in the latest UI tree (the screen changed). Call android_get_ui_tree again.")
 
+    private suspend fun maybeWithTree(svc: AutomationAccessibilityService, args: JSONObject, result: JSONObject): JSONObject {
+        if (result.optBoolean("isError") || !args.optBoolean("include_tree", false)) return result
+        svc.awaitIdle()
+        val msg = result.optJSONArray("content")?.optJSONObject(0)?.optString("text").orEmpty()
+        val tree = uiTree(svc, null, false, 150)
+        return text(if (msg.isBlank()) tree else "$msg\n\n$tree")
+    }
+
+    private suspend fun runSteps(context: Context, svc: AutomationAccessibilityService, args: JSONObject): JSONObject {
+        val steps = args.optJSONArray("steps") ?: return error("Missing 'steps' array.")
+        val log = mutableListOf<String>()
+        for (i in 0 until steps.length()) {
+            val step = steps.optJSONObject(i) ?: return error("Step $i is not an object.")
+            val action = step.optString("action").lowercase()
+            val res = when (action) {
+                "launch" -> launchApp(context, step)
+                "wait" -> waitFor(svc, step)
+                "tap" -> tap(svc, step)
+                "type" -> typeText(svc, step)
+                "scroll" -> scroll(context, svc, step)
+                "back", "home" -> globalAction(svc, action)
+                else -> return error("Step $i: unknown action '$action'")
+            }
+            val msg = res.optJSONArray("content")?.optJSONObject(0)?.optString("text").orEmpty()
+            if (res.optBoolean("isError")) return error("Step $i ($action) failed: $msg")
+            log.add("${i + 1}. $action: $msg")
+        }
+        val summary = log.joinToString("\n")
+        if (!args.optBoolean("include_tree", true)) return text(summary)
+        svc.awaitIdle()
+        return text("$summary\n\n${uiTree(svc, null, false, 150)}")
+    }
+
     // ---------------- calls ----------------
 
     /**
@@ -318,9 +359,9 @@ object AndroidAutomation {
                     text(uiTree(svc, args.optString("filter").ifBlank { null }, args.optBoolean("all_windows"), args.optInt("max_elements", 300).coerceIn(10, 2000)))
                 }
                 "android_screenshot" -> screenshot(context, args.optInt("max_width", 1080).coerceIn(200, 4000), args.optInt("quality", 70).coerceIn(10, 100))
-                "android_tap" -> withAccessibility(context) { svc -> tap(svc, args) }
-                "android_type_text" -> withAccessibility(context) { svc -> typeText(svc, args) }
-                "android_scroll" -> withAccessibility(context) { svc -> scroll(context, svc, args) }
+                "android_tap" -> withAccessibility(context) { svc -> maybeWithTree(svc, args, tap(svc, args)) }
+                "android_type_text" -> withAccessibility(context) { svc -> maybeWithTree(svc, args, typeText(svc, args)) }
+                "android_scroll" -> withAccessibility(context) { svc -> maybeWithTree(svc, args, scroll(context, svc, args)) }
                 "android_swipe" -> withAccessibility(context) { svc ->
                     val path = Path().apply {
                         moveTo(args.getDouble("x1").toFloat(), args.getDouble("y1").toFloat())
@@ -335,6 +376,7 @@ object AndroidAutomation {
                 "android_launch_app" -> launchApp(context, args)
                 "android_open_intent" -> openIntent(context, args)
                 "android_wait_for" -> withAccessibility(context) { svc -> waitFor(svc, args) }
+                "android_run_steps" -> withAccessibility(context) { svc -> runSteps(context, svc, args) }
                 "android_press_key" -> pressKey(context, args.getString("key"))
                 "android_install_apk" -> withShell {
                     val out = DeviceAccess.installApk(args.getString("path")).output.trim()
