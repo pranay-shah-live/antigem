@@ -63,16 +63,20 @@ import ai.antigem.i18n.L
  * The chat feed draws a reply as many list items (one per block) and only lets each block be selected on its own;
  * this sheet is built only when opened, so the feed keeps its speed. "Formatted" looks like the chat (media,
  * diagrams and tool cards are left out so nothing interferes with selecting); "Markdown" is the exact text.
+ * [plainText]: text that isn't Markdown (a terminal's output): only the exact text, no Formatted / Markdown chips.
  */
 @Composable
 fun SelectTextSheet(
     content: String,
-    onDismiss: () -> Unit,
-    onQuote: ((String) -> Unit)? = null
+    title: String = L.components.selectText.selectText,
+    plainText: Boolean = false,
+    onQuote: ((String) -> Unit)? = null,
+    // last, so a trailing lambda (MessageBubble) still lands here
+    onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     var markdown by rememberSaveable { mutableStateOf(false) }
-    val blocks = remember(content) { parseMarkdownBlocks(content) }
+    val blocks = remember(content, plainText) { if (plainText) emptyList<MarkdownBlock>() else parseMarkdownBlocks(content) }
     var mdFieldValue by remember(content) { mutableStateOf(TextFieldValue(content)) }
 
     val baseToolbar = LocalTextToolbar.current
@@ -127,7 +131,7 @@ fun SelectTextSheet(
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L.common.close) }
-                    Text(L.components.selectText.selectText, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     if (onQuote != null) {
                         IconButton(onClick = {
                             if (markdown) {
@@ -158,13 +162,15 @@ fun SelectTextSheet(
                     }
                     IconButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Copied Response", content))
-                        Toast.makeText(context, L.components.selectText.copiedResponse, Toast.LENGTH_SHORT).show()
+                        clipboard.setPrimaryClip(ClipData.newPlainText(if (plainText) title else "Copied Response", content))
+                        Toast.makeText(context, if (plainText) L.common.copied else L.components.selectText.copiedResponse, Toast.LENGTH_SHORT).show()
                     }) { Icon(Icons.Outlined.ContentCopy, L.components.selectText.copyAll) }
                 }
-                Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ModeChip(L.components.selectText.formatted, selected = !markdown) { markdown = false }
-                    ModeChip(L.components.selectText.markdown, selected = markdown) { markdown = true }
+                if (!plainText) {
+                    Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ModeChip(L.components.selectText.formatted, selected = !markdown) { markdown = false }
+                        ModeChip(L.components.selectText.markdown, selected = markdown) { markdown = true }
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
@@ -193,6 +199,8 @@ fun SelectTextSheet(
                                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                                 modifier = Modifier.fillMaxWidth()
                             )
+                        } else if (plainText) {
+                            Text(content, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp)
                         } else {
                             blocks.forEach { block -> SelectableBlock(block) }
                         }

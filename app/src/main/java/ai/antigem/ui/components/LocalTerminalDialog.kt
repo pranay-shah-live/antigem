@@ -129,6 +129,8 @@ fun LocalTerminalContent(
     showKeyboardOnOpen: Boolean = true,
     /** Whether this terminal is the screen shown now (hidden screens stay composed): a hidden one closes its sessions drawer. */
     isVisible: Boolean = true,
+    /** Something drawn over this terminal (the IDE's sidebar): TalkBack can't reach the terminal meanwhile. */
+    coveredForA11y: Boolean = false,
     /** The sessions drawer's gear: show Settings → Terminal; null = no gear. */
     onOpenSettings: (() -> Unit)? = null
 ) {
@@ -159,9 +161,28 @@ fun LocalTerminalContent(
         }
     }
 
-    val activeSession = customSession
+    var currentTerminalView by remember { mutableStateOf<TerminalView?>(null) }
+
+    val wantedSession = customSession
         ?: sessions.find { it.id == activeSessionId }
         ?: sessions.firstOrNull()
+    // Another session (a new one, a switch, a closed one, the IDE's run again) replaces the terminal view. If Compose
+    // removes the view while it has the keyboard focus, Android hands the focus to the window in the middle of the
+    // frame's apply, Compose measures (and composes the extra keys) right then and crashes ("pending composition has
+    // not been applied"). So the old view gives up the focus first and the other session shows one frame later.
+    var shownSession by remember { mutableStateOf(wantedSession) }
+    LaunchedEffect(wantedSession) {
+        if (wantedSession === shownSession) return@LaunchedEffect
+        if (wantedSession?.id != shownSession?.id) {
+            // this view goes away: not focusable, so a hardware keyboard's focus can't land on it again either
+            currentTerminalView?.let {
+                it.isFocusable = false
+                it.clearFocus()
+            }
+        }
+        shownSession = wantedSession
+    }
+    val activeSession = shownSession
 
     if (activeSession == null) {
         // the first session is usually ready in well under a second: a spinner flashed for that moment makes the open
@@ -228,7 +249,6 @@ fun LocalTerminalContent(
         mutableIntStateOf((initialFontSizeSp * density.density).roundToInt().coerceIn(16, 60))
     }
 
-    var currentTerminalView by remember { mutableStateOf<TerminalView?>(null) }
     // a theme change repaints the terminal in its new colors
     val terminalThemeVersion = ai.antigem.theme.ThemeTerminal.version
     LaunchedEffect(terminalThemeVersion) { currentTerminalView?.onScreenUpdated() }
@@ -277,6 +297,12 @@ fun LocalTerminalContent(
     val isDrawerShown by remember(drawerState) { derivedStateOf { drawerState.isShown } }
     LaunchedEffect(isVisible) { if (!isVisible) drawerState.snapClosed() }
     androidx.activity.compose.BackHandler(enabled = isVisible && isDrawerShown) { drawerState.close() }
+    // TalkBack: the terminal (a native View) is out of reach while the drawer or a panel covers it, or it's hidden
+    HideFromTalkBackWhile(currentTerminalView, isDrawerShown || !isVisible || coveredForA11y)
+    // TalkBack's "Read terminal output": the whole output as selectable text
+    var a11yTranscript by remember { mutableStateOf<String?>(null) }
+    // bigger extra keys while TalkBack is on
+    val talkBackOn = rememberTalkBackOn()
     val sessionPillEnabled by authPreferences.terminalSessionPillEnabled
         .collectAsState(initial = authPreferences.getTerminalSessionPillEnabledSync())
     val drawerSwipeArea by authPreferences.terminalDrawerSwipeArea
@@ -545,6 +571,15 @@ fun LocalTerminalContent(
                                 setTextSize(terminalTextSize)
                                 isFocusable = true
                                 isFocusableInTouchMode = true
+                                addReadOutputA11yAction { a11yTranscript = it }
+                                // the sessions drawer only opens by an edge swipe, which TalkBack can't do: an action for it
+                                // in TalkBack's actions menu (nothing changes on screen or for touch)
+                                if (hasSessionsDrawer) {
+                                    androidx.core.view.ViewCompat.addAccessibilityAction(this, L.components.a11y.openTerminalSessions) { _, _ ->
+                                        drawerState.open()
+                                        true
+                                    }
+                                }
 
                                 val createClient: () -> TerminalViewClient = {
                                     object : TerminalViewClient {
@@ -797,7 +832,7 @@ fun LocalTerminalContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 3.dp)
-                    .height(70.dp), // two rows of keys: 34dp + 2dp + 34dp
+                    .height(if (talkBackOn) 98.dp else 70.dp), // two rows of keys: 34dp + 2dp + 34dp (48dp each under TalkBack)
                 verticalAlignment = Alignment.Top
             ) { page ->
                 if (page == 1) {
@@ -816,25 +851,25 @@ fun LocalTerminalContent(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        ExtraKey(label = "ESC", modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "ESC", modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_ESCAPE, "\u001B")
                         }
-                        ExtraKey(label = "/", enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "/", enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_SLASH, "/")
                         }
-                        ExtraKey(label = "-", enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "-", enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_MINUS, "-")
                         }
-                        ExtraKey(label = "HOME", modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "HOME", modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_MOVE_HOME, "\u0001")
                         }
-                        ExtraKey(label = "↑", enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "↑", enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_DPAD_UP, "\u001B[A")
                         }
-                        ExtraKey(label = "END", modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "END", modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_MOVE_END, "\u0005")
                         }
-                        ExtraKey(label = L.components.localTerminal.pgup, enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = L.components.localTerminal.pgup, enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_PAGE_UP, "\u001B[5~")
                         }
                     }
@@ -844,14 +879,14 @@ fun LocalTerminalContent(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        ExtraKey(label = "↹", enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "↹", enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_TAB, "\t")
                         }
                         ExtraKey(
                             label = L.components.localTerminal.ctrl,
                             isActive = ctrlState != ModifierState.OFF,
                             isLocked = ctrlState == ModifierState.LOCKED,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn),
                             onClick = {
                                 ctrlState = if (ctrlState == ModifierState.OFF) ModifierState.ONE_SHOT else ModifierState.OFF
                             },
@@ -863,7 +898,7 @@ fun LocalTerminalContent(
                             label = L.components.localTerminal.alt,
                             isActive = altState != ModifierState.OFF,
                             isLocked = altState == ModifierState.LOCKED,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn),
                             onClick = {
                                 altState = if (altState == ModifierState.OFF) ModifierState.ONE_SHOT else ModifierState.OFF
                             },
@@ -871,16 +906,16 @@ fun LocalTerminalContent(
                                 altState = if (altState == ModifierState.LOCKED) ModifierState.OFF else ModifierState.LOCKED
                             }
                         )
-                        ExtraKey(label = "←", enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "←", enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_DPAD_LEFT, "\u001B[D")
                         }
-                        ExtraKey(label = "↓", enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "↓", enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_DPAD_DOWN, "\u001B[B")
                         }
-                        ExtraKey(label = "→", enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = "→", enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_DPAD_RIGHT, "\u001B[C")
                         }
-                        ExtraKey(label = L.components.localTerminal.pgdn, enableRepeat = true, modifier = Modifier.weight(1f)) {
+                        ExtraKey(label = L.components.localTerminal.pgdn, enableRepeat = true, modifier = Modifier.weight(1f).a11yMinTouchTarget(talkBackOn)) {
                             sendKeyToTerminal(KeyEvent.KEYCODE_PAGE_DOWN, "\u001B[6~")
                         }
                     }
@@ -1103,6 +1138,11 @@ fun LocalTerminalContent(
                 onCloseSession = { sessionToClose = it },
                 onOpenSettings = onOpenSettings
             )
+        }
+
+        // TalkBack's "Read terminal output" (the terminal's actions menu)
+        a11yTranscript?.let { text ->
+            SelectTextSheet(text, onDismiss = { a11yTranscript = null }, title = L.components.a11y.terminalOutput, plainText = true)
         }
 
         if (sessionToClose != null) {

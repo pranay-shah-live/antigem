@@ -49,6 +49,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -60,8 +64,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.antigem.domain.model.AgentKind
 import ai.antigem.ui.components.MarkdownContent
+import ai.antigem.ui.components.a11yMinTouchTarget
 import ai.antigem.ui.components.accent
 import ai.antigem.ui.components.label
+import ai.antigem.ui.components.rememberTalkBackOn
 import ai.antigem.i18n.L
 
 private val AllowGreen: androidx.compose.ui.graphics.Color get() = ai.antigem.theme.AppColors.success
@@ -127,6 +133,7 @@ fun AgentApprovalPanel(
 @Composable
 private fun ApprovalBody(item: ApprovalItem, count: Int, onAllowAll: (() -> Unit)?, onDenyAll: (() -> Unit)?) {
     val accent = item.agent.accent()
+    val talkBackOn = rememberTalkBackOn()
     var denying by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf("") }
     var alwaysMenu by remember { mutableStateOf(false) }
@@ -141,7 +148,7 @@ private fun ApprovalBody(item: ApprovalItem, count: Int, onAllowAll: (() -> Unit
             ) { Icon(item.icon, null, tint = accent, modifier = Modifier.size(19.dp)) }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(item.title, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                Text(item.title, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.semantics { heading() })
                 Text(
                     listOfNotNull(item.agent.label(), item.subtitle).joinToString(" · "),
                     fontSize = 11.5.sp,
@@ -152,7 +159,7 @@ private fun ApprovalBody(item: ApprovalItem, count: Int, onAllowAll: (() -> Unit
             }
             if (count > 1) {
                 Text(
-                    "1 of $count",
+                    L.agents.agentApproval.requestProgress(count),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -164,7 +171,7 @@ private fun ApprovalBody(item: ApprovalItem, count: Int, onAllowAll: (() -> Unit
             }
             if (count > 1 && (onAllowAll != null || onDenyAll != null)) {
                 Box {
-                    IconButton(onClick = { overflow = true }, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = { overflow = true }, modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(32.dp)) {
                         Icon(Icons.Outlined.MoreVert, L.common.more, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
                     }
                     DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
@@ -277,7 +284,11 @@ private fun ApprovalBody(item: ApprovalItem, count: Int, onAllowAll: (() -> Unit
                     }
                 }
                 TextButton(onClick = { denying = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("${item.denyLabel}…", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    Text(
+                        "${item.denyLabel}…",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.clearAndSetSemantics { contentDescription = item.denyLabel }
+                    )
                 }
                 return@Column
             }
@@ -294,7 +305,9 @@ private fun ApprovalBody(item: ApprovalItem, count: Int, onAllowAll: (() -> Unit
                         OutlinedButton(
                             onClick = { alwaysMenu = true },
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(start = 12.dp, end = 6.dp)
+                            contentPadding = PaddingValues(start = 12.dp, end = 6.dp),
+                            // TalkBack: "Always allow options" rather than a bare "Always" (it opens the list of always-allow choices)
+                            modifier = Modifier.semantics { contentDescription = L.agents.agentApproval.alwaysAllowOptions }
                         ) {
                             Text(L.agents.agentApproval.always, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                             Icon(Icons.Outlined.ExpandMore, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))

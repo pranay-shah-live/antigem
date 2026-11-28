@@ -19,6 +19,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import ai.antigem.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
@@ -160,6 +161,7 @@ enum class SettingsSection(private val titleText: () -> String, private val subt
     TERMUX_API({ "Termux:API" }, { L.settings.dialog.howTermuxApiCommandsAreHandled }),
     X11_DESKTOP({ L.settings.dialog.x11Desktop }, { L.settings.dialog.linuxDesktopAppsWithTermuxX11 }),
     UPDATES({ L.settings.dialog.updates }, { L.settings.dialog.betaUpdatesAndHowOftenAntigem }),
+    TROUBLESHOOT({ L.settings.dialog.troubleshoot }, { L.settings.dialog.troubleshootSubtitle }),
     CHANGELOG({ L.settings.dialog.whatsNew }, { L.settings.dialog.everyAntigemVersionAndWhatChanged }),
     ABOUT({ L.settings.dialog.aboutInfo }, { L.settings.dialog.appVersionPackageDetailsAndBridge });
     val title: String get() = titleText()
@@ -400,6 +402,9 @@ fun SettingsDialog(
             onDismiss()
         }
     }
+
+    // the Language page's lists are read ahead (once, off the main thread), so it opens complete instead of filling in
+    LaunchedEffect(Unit) { ai.antigem.i18n.LanguageRepo.prewarm() }
 
     val isDark = isAppInDarkTheme()
     val cardBg = ai.antigem.theme.AppColors.card
@@ -956,6 +961,11 @@ fun SettingsDialog(
                         cardBg = cardBg,
                         cardBorder = cardBorder
                     )
+                    SettingsSection.TROUBLESHOOT -> TroubleshootScreen(
+                        cardBg = cardBg,
+                        cardBorder = cardBorder,
+                        onNavigate = { currentSection = it }
+                    )
                 }
             }
             }
@@ -1141,6 +1151,7 @@ private fun MainSettingsMenu(
             ),
             listOf(
                 row(SettingsSection.UPDATES, Icons.Outlined.SystemUpdateAlt, c.info),
+                row(SettingsSection.TROUBLESHOOT, Icons.Outlined.HealthAndSafety, c.warning),
                 row(SettingsSection.ABOUT, Icons.Outlined.Info, c.accentAlt, "v${BuildConfig.VERSION_NAME}")
             )
         )
@@ -2021,7 +2032,7 @@ private fun AppearanceSubScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { onSetFloatingSwitcherOrientation("VERTICAL") },
+                                .selectable(selected = isVert, role = Role.RadioButton) { onSetFloatingSwitcherOrientation("VERTICAL") },
                             shape = RoundedCornerShape(10.dp),
                             color = if (isVert) ClaudeTerracotta.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
                             border = BorderStroke(1.dp, if (isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
@@ -2041,7 +2052,7 @@ private fun AppearanceSubScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { onSetFloatingSwitcherOrientation("HORIZONTAL") },
+                                .selectable(selected = !isVert, role = Role.RadioButton) { onSetFloatingSwitcherOrientation("HORIZONTAL") },
                             shape = RoundedCornerShape(10.dp),
                             color = if (!isVert) ClaudeTerracotta.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
                             border = BorderStroke(1.dp, if (!isVert) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
@@ -2175,7 +2186,7 @@ private fun AppearanceSubScreen(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
 
-                val allAvailable = listOf("chat", "ide", "terminal", "browser", "notes", "files", "run")
+                val allAvailable = listOf("chat", "ide", "terminal", "browser", "notes", "files", "run", "private")
                 val currentItems = floatingSwitcherItems.toMutableList()
                 val displayedList = currentItems + allAvailable.filterNot { currentItems.contains(it) }
 
@@ -2189,6 +2200,7 @@ private fun AppearanceSubScreen(
                         "notes" -> L.common.notesToDos
                         "files" -> L.settings.dialog.filesFileExplorer
                         "run" -> L.settings.dialog.runBuildRunCommands
+                        "private" -> L.privateSpace.settings.switcherLabel
                         else -> itemId
                     }
                     val itemIcon = when (itemId) {
@@ -2199,6 +2211,7 @@ private fun AppearanceSubScreen(
                         "notes" -> Icons.Outlined.EditNote
                         "files" -> Icons.Outlined.FolderOpen
                         "run" -> Icons.Outlined.PlayCircle
+                        "private" -> Icons.Outlined.Shield
                         else -> Icons.Outlined.ChatBubbleOutline
                     }
 
@@ -5827,7 +5840,7 @@ private fun ProjectsBackupRestoreDialog(
                                         border = BorderStroke(1.dp, if (backupMode == "git") ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)),
                                         modifier = Modifier
                                             .weight(1f)
-                                            .clickable { backupMode = "git" }
+                                            .selectable(selected = backupMode == "git", role = Role.RadioButton) { backupMode = "git" }
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(8.dp),
@@ -5854,7 +5867,7 @@ private fun ProjectsBackupRestoreDialog(
                                         border = BorderStroke(1.dp, if (backupMode == "full") ClaudeTerracotta else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)),
                                         modifier = Modifier
                                             .weight(1f)
-                                            .clickable { backupMode = "full" }
+                                            .selectable(selected = backupMode == "full", role = Role.RadioButton) { backupMode = "full" }
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(8.dp),
@@ -6233,7 +6246,7 @@ private fun ProjectsBackupRestoreDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(6.dp))
-                                        .clickable { conflictStrategy = "bak" }
+                                        .selectable(selected = conflictStrategy == "bak", role = Role.RadioButton) { conflictStrategy = "bak" }
                                         .padding(4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -6255,7 +6268,7 @@ private fun ProjectsBackupRestoreDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(6.dp))
-                                        .clickable { conflictStrategy = "overwrite" }
+                                        .selectable(selected = conflictStrategy == "overwrite", role = Role.RadioButton) { conflictStrategy = "overwrite" }
                                         .padding(4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -8377,7 +8390,7 @@ private fun AddPermissionRuleDialog(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable { selectedDecision = key },
+                                .selectable(selected = isSel, role = Role.RadioButton) { selectedDecision = key },
                             shape = RoundedCornerShape(8.dp),
                             color = if (isSel) col.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             border = BorderStroke(

@@ -87,6 +87,21 @@ import ai.antigem.theme.ClaudeTerracotta
 import java.net.URLEncoder
 import kotlinx.coroutines.launch
 import ai.antigem.i18n.L
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.foundation.selection.toggleable
 
 /**
  * Tab model representing a live web session with its own state and WebView.
@@ -354,7 +369,8 @@ fun BrowserScreen(
                             .height(44.dp)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
-                                indication = null
+                                indication = null,
+                                onClickLabel = L.browser.screen.searchOrTypeUrl
                             ) {
                                 if (!isAddressFocused) {
                                     shouldSelectAllOnNextValueChange = true
@@ -473,7 +489,8 @@ fun BrowserScreen(
                                                 fontSize = 14.5.sp,
                                                 fontWeight = FontWeight.Medium,
                                                 maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.clearAndSetSemantics { }
                                             )
                                         }
                                         Box(modifier = Modifier.graphicsLayer { alpha = if (showHostOnly) 0f else 1f }) {
@@ -585,7 +602,10 @@ fun BrowserScreen(
                             modifier = Modifier
                                 .size(48.dp)
                                 .clip(CircleShape)
-                                .clickable {
+                                .clickable(
+                                    role = Role.Button,
+                                    onClickLabel = L.browser.screen.openTabSwitcher
+                                ) {
                                     activeTab?.capturePreview()
                                     showTabOverview = true
                                 },
@@ -605,7 +625,10 @@ fun BrowserScreen(
                                     text = if (tabCount > 99) ":)" else "$tabCount",
                                     fontSize = if (tabCount > 9) 10.sp else 11.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                                    modifier = Modifier.clearAndSetSemantics {
+                                        contentDescription = L.browser.screen.tabsCount(tabCount)
+                                    }
                                 )
                             }
                         }
@@ -649,7 +672,7 @@ fun BrowserScreen(
                                 translationX = if (isActive && !isHomePage) 0f else -20000f
                             }
                             // a background tab: out of TalkBack's and the keyboard's reach (draws the same)
-                            .hiddenWhileOffscreen(isActive && !isHomePage)
+                            .hiddenWhileOffscreen(isActive && !isHomePage && !isAddressFocused)
                     ) {
                         AndroidView(
                             factory = { ctx ->
@@ -678,7 +701,7 @@ fun BrowserScreen(
                                 tab.webView = wv
                                 // the page inside a WebView isn't in Compose's tree: hide a background tab's from TalkBack here
                                 container.importantForAccessibility =
-                                    if (tabOnScreen) android.view.View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                                    if (tabOnScreen && !isAddressFocused) android.view.View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                                     else android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                                 wv.setBackgroundColor(android.graphics.Color.WHITE)
                                 @Suppress("DEPRECATION")
@@ -754,6 +777,7 @@ fun BrowserScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(bottom = paddingValues.calculateBottomPadding())
+                        .hiddenWhileOffscreen(!isAddressFocused)
                 ) {
                     SpeedDialHomeView(
                         shortcuts = sessionManager.shortcuts,
@@ -911,7 +935,7 @@ private fun BrowserBarIconButton(
         modifier = Modifier
             .size(size)
             .clip(CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -1043,6 +1067,7 @@ private fun BrowserMenuSheet(
                     icon = Icons.Rounded.DesktopWindows,
                     label = L.browser.screen.desktop,
                     active = activeTab?.isDesktopMode == true,
+                    isSwitch = true,
                     modifier = Modifier.weight(1f),
                     onClick = { closeThen(onToggleDesktop) }
                 )
@@ -1050,6 +1075,7 @@ private fun BrowserMenuSheet(
                     icon = Icons.Rounded.Code,
                     label = "DevTools",
                     active = activeTab?.isDevToolsEnabled == true,
+                    isSwitch = true,
                     modifier = Modifier.weight(1f),
                     onClick = { closeThen(onToggleDevTools) }
                 )
@@ -1127,7 +1153,9 @@ private fun BrowserMenuTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    active: Boolean = false
+    active: Boolean = false,
+    // an on/off tile (Desktop, DevTools): TalkBack says "Switch, On / Off" instead of "Button"
+    isSwitch: Boolean = false
 ) {
     val container by animateColorAsState(
         targetValue = if (active) ClaudeTerracotta.copy(alpha = 0.14f) else ai.antigem.theme.AppColors.fill,
@@ -1146,7 +1174,10 @@ private fun BrowserMenuTile(
                 BorderStroke(1.dp, if (active) ClaudeTerracotta.copy(alpha = 0.35f) else Color.Transparent),
                 RoundedCornerShape(18.dp)
             )
-            .clickable(enabled = enabled, onClick = onClick)
+            .then(
+                if (isSwitch) Modifier.toggleable(value = active, enabled = enabled, role = Role.Switch, onValueChange = { onClick() })
+                else Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            )
             .padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -1179,7 +1210,7 @@ private fun BrowserMenuRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1231,20 +1262,24 @@ private fun SearchHistoryOverlay(
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .clickable { onDismiss() }
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
+        // The dim backdrop: a tap outside the card closes it. It is a sibling BEHIND the card, not its parent: a
+        // clickable parent would swallow the card's texts ("Recent searches") into one screen-wide "Dismiss" item for
+        // TalkBack. The card (a Surface) keeps taps from reaching it; TalkBack reaches it after the card.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(role = Role.Button) { onDismiss() }
+                .semantics {
+                    contentDescription = L.common.dismiss
+                    traversalIndex = 1f
+                }
+        )
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {}, // consume clicks inside card to prevent dismiss
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             shape = RoundedCornerShape(16.dp),
             color = ai.antigem.theme.AppColors.card,
             shadowElevation = 8.dp,
@@ -1260,7 +1295,7 @@ private fun SearchHistoryOverlay(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelectHistory(trimmed) }
+                            .clickable(role = Role.Button) { onSelectHistory(trimmed) }
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1320,7 +1355,8 @@ private fun SearchHistoryOverlay(
                             text = if (trimmed.isBlank()) L.browser.screen.recentSearches else L.browser.screen.historySuggestions,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            modifier = Modifier.semantics { heading() }
                         )
                         if (trimmed.isBlank() && historyItems.isNotEmpty()) {
                             Text(
@@ -1330,7 +1366,7 @@ private fun SearchHistoryOverlay(
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(4.dp))
-                                    .clickable { onClearAllHistory() }
+                                    .clickable(role = Role.Button) { onClearAllHistory() }
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
@@ -1345,7 +1381,7 @@ private fun SearchHistoryOverlay(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onSelectHistory(item.url) }
+                                    .clickable(role = Role.Button) { onSelectHistory(item.url) }
                                     .padding(horizontal = 14.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1568,6 +1604,11 @@ private fun ShortcutItemView(
     Column(
         modifier = Modifier
             .width(62.dp)
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                onClick(label = L.common.open) { onClick(); true }
+                onLongClick(label = L.browser.screen.removeShortcut) { onLongClick(); true }
+            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onClick() },
@@ -1581,7 +1622,8 @@ private fun ShortcutItemView(
                 .size(52.dp)
                 .clip(CircleShape)
                 .background(circleBg)
-                .border(BorderStroke(1.dp, circleBorder), CircleShape),
+                .border(BorderStroke(1.dp, circleBorder), CircleShape)
+                .clearAndSetSemantics { },
             contentAlignment = Alignment.Center
         ) {
             when {
@@ -1642,7 +1684,7 @@ private fun AddShortcutItemView(
     Column(
         modifier = Modifier
             .width(62.dp)
-            .clickable { onClick() },
+            .clickable(role = Role.Button) { onClick() },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -1670,7 +1712,8 @@ private fun AddShortcutItemView(
             fontSize = 11.5.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
             maxLines = 1,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            modifier = Modifier.clearAndSetSemantics { }
         )
     }
 }
@@ -1742,7 +1785,7 @@ private fun TabOverviewScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Surface(
-                            modifier = Modifier.size(26.dp),
+                            modifier = Modifier.size(26.dp).clearAndSetSemantics { },
                             shape = RoundedCornerShape(6.dp),
                             color = Color.Transparent,
                             border = BorderStroke(1.8.dp, MaterialTheme.colorScheme.onSurface)
@@ -1758,10 +1801,11 @@ private fun TabOverviewScreen(
                         }
 
                         Text(
-                            text = "Tabs (${tabs.size})",
+                            text = L.browser.screen.tabsTitle(tabs.size),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.semantics { heading() }
                         )
                     }
 
@@ -1866,7 +1910,8 @@ private fun TabOverviewScreen(
                             text = L.browser.screen.tabClosed,
                             color = Color.White,
                             fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                         )
                         Text(
                             text = L.common.undo,
@@ -1875,7 +1920,7 @@ private fun TabOverviewScreen(
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .clickable {
+                                .clickable(role = Role.Button) {
                                     val toRestore = recentlyClosedTab
                                     if (toRestore != null) {
                                         BrowserSessionManager.instance.addNewTab(
@@ -1959,7 +2004,13 @@ private fun TabCardView(
                     }
                 )
             }
-            .clickable { onClick() },
+            .semantics {
+                if (isSelected) stateDescription = L.browser.screen.selectedTab
+                customActions = listOf(
+                    CustomAccessibilityAction(L.browser.screen.closeTab) { onClose(); true }
+                )
+            }
+            .clickable(role = Role.Button) { onClick() },
         shape = RoundedCornerShape(14.dp),
         color = ai.antigem.theme.AppColors.card,
         border = BorderStroke(
@@ -2017,7 +2068,13 @@ private fun TabCardView(
                             modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text(L.browser.screen.ai, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = ClaudeTerracotta)
+                        Text(
+                            text = L.browser.screen.ai,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = ClaudeTerracotta,
+                            modifier = Modifier.clearAndSetSemantics { }
+                        )
                     }
                 }
 
@@ -2155,7 +2212,11 @@ fun BrowserDiagnosticOverlay(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = ai.antigem.theme.AppColors.onBackground,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.semantics {
+                        heading()
+                        liveRegion = LiveRegionMode.Polite
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -2206,7 +2267,11 @@ fun BrowserDiagnosticOverlay(
                         onClick = { showDetails = !showDetails },
                         shape = RoundedCornerShape(8.dp),
                         color = Color.Transparent,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics {
+                                stateDescription = if (showDetails) L.components.a11y.expanded else L.components.a11y.collapsed
+                            }
                     ) {
                         Row(
                             modifier = Modifier.padding(vertical = 4.dp),
@@ -2214,7 +2279,7 @@ fun BrowserDiagnosticOverlay(
                             horizontalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                text = if (showDetails) L.browser.screen.hideDiagnosticLogs else "Show Diagnostic Logs (${recentLogs.size})",
+                                text = if (showDetails) L.browser.screen.hideDiagnosticLogs else L.browser.screen.showDiagnosticLogsCount(recentLogs.size),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = ClaudeTerracotta
@@ -2349,7 +2414,8 @@ private fun BrowserAiLockOverlay(busy: Boolean, onUnlock: () -> Unit) {
                     text = if (busy) L.browser.screen.aiIsWorking else L.browser.screen.controlledByAi,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White
+                    color = Color.White,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                 )
                 if (!busy) {
                     Spacer(modifier = Modifier.width(4.dp))

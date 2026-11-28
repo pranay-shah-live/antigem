@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,6 +39,8 @@ import ai.antigem.data.preferences.AuthPreferences
 import ai.antigem.theme.ClaudeTerracotta
 import ai.antigem.ui.components.AppToastHelper
 import ai.antigem.ui.components.ChatToastType
+import ai.antigem.ui.components.a11yMinTouchTarget
+import ai.antigem.ui.components.rememberTalkBackOn
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -81,6 +85,8 @@ fun ProjectSidebar(
     var showDetailsDialog by remember { mutableStateOf<FileNode?>(null) }
     val treeScope = rememberCoroutineScope()
     val daemonStatus by ai.antigem.data.daemon.IdeDaemonManager.status.collectAsState()
+    // bigger buttons and rows while TalkBack is on
+    val talkBackOn = rememberTalkBackOn()
 
     Column(
         modifier = modifier
@@ -236,7 +242,8 @@ fun ProjectSidebar(
                 color = if (selectedTab == SidebarTab.EXPLORER) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { selectedTab = SidebarTab.EXPLORER }
+                    .a11yMinTouchTarget(talkBackOn)
+                    .selectable(selected = selectedTab == SidebarTab.EXPLORER, role = Role.Tab) { selectedTab = SidebarTab.EXPLORER }
             ) {
                 Row(
                     modifier = Modifier.padding(vertical = 5.dp),
@@ -264,7 +271,8 @@ fun ProjectSidebar(
                 color = if (selectedTab == SidebarTab.SOURCE_CONTROL) ClaudeTerracotta.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { selectedTab = SidebarTab.SOURCE_CONTROL }
+                    .a11yMinTouchTarget(talkBackOn)
+                    .selectable(selected = selectedTab == SidebarTab.SOURCE_CONTROL, role = Role.Tab) { selectedTab = SidebarTab.SOURCE_CONTROL }
             ) {
                 Row(
                     modifier = Modifier.padding(vertical = 5.dp),
@@ -322,7 +330,7 @@ fun ProjectSidebar(
                                 showCreateFileDialog = rootPath
                             }
                         },
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(26.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.NoteAdd,
@@ -339,7 +347,7 @@ fun ProjectSidebar(
                                 showCreateFileDialog = rootPath
                             }
                         },
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(26.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.CreateNewFolder,
@@ -353,7 +361,7 @@ fun ProjectSidebar(
                             val rootPath = activeProject?.path ?: ""
                             onOpenTerminal(rootPath)
                         },
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(26.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Terminal,
@@ -364,7 +372,7 @@ fun ProjectSidebar(
                     }
                     IconButton(
                         onClick = onOpenFileManager,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(26.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.FolderOpen,
@@ -375,7 +383,7 @@ fun ProjectSidebar(
                     }
                     IconButton(
                         onClick = onRefreshTree,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(26.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
@@ -492,7 +500,8 @@ fun ProjectSidebar(
                                 onDeleteRequested = { targetNode ->
                                     showDeleteDialog = targetNode
                                 },
-                                onOpenTerminal = onOpenTerminal
+                                onOpenTerminal = onOpenTerminal,
+                                talkBackOn = talkBackOn
                             )
                             is TreeRow.Loading -> AfterDelay { FileTreeNoteRow(depth = row.depth, text = L.common.loading, loading = true) }
                             is TreeRow.Note -> FileTreeNoteRow(depth = row.depth, text = row.text, isError = row.isError)
@@ -716,7 +725,9 @@ fun FileTreeNodeItem(
     onRenameRequested: (FileNode) -> Unit,
     onDetailsRequested: (FileNode) -> Unit,
     onDeleteRequested: (FileNode) -> Unit,
-    onOpenTerminal: (path: String) -> Unit = {}
+    onOpenTerminal: (path: String) -> Unit = {},
+    /** TalkBack is on: a 48dp row and options button. */
+    talkBackOn: Boolean = false
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -727,7 +738,8 @@ fun FileTreeNodeItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(32.dp)
+                // 48dp (or taller for big text) while TalkBack is on
+                .then(if (talkBackOn) Modifier.heightIn(min = 48.dp) else Modifier.height(32.dp))
                 .padding(start = (depth * 14).dp)
                 .background(
                     if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
@@ -789,7 +801,7 @@ fun FileTreeNodeItem(
             Box {
                 IconButton(
                     onClick = { menuExpanded = true },
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(24.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,

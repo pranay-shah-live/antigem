@@ -62,6 +62,7 @@ import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
@@ -85,6 +86,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -151,6 +160,8 @@ object PageSnapshots {
     internal val sources = HashMap<AppViewMode, GraphicsLayer>()
 
     fun capture(activity: Activity, mode: AppViewMode) {
+        // never pictured: its card shows just its icon and whether it is locked
+        if (mode == AppViewMode.PRIVATE_SPACE) return
         val layer = sources[mode]?.takeIf { !it.isReleased && it.size.width > 0 && it.size.height > 0 }
         if (layer == null) {
             // the page hasn't been recorded yet (the overview was just turned on): a copy of the screen instead
@@ -265,6 +276,7 @@ private fun overviewPage(id: String): OverviewPage? = when (id.lowercase()) {
     "notes" -> OverviewPage("notes", AppViewMode.NOTES, L.common.notes, Icons.Outlined.EditNote)
     "files" -> OverviewPage("files", AppViewMode.FILES, L.common.files, Icons.Outlined.FolderOpen)
     "run" -> OverviewPage("run", AppViewMode.RUN, L.common.run, Icons.Outlined.PlayCircle)
+    "private" -> OverviewPage("private", AppViewMode.PRIVATE_SPACE, L.privateSpace.title, Icons.Outlined.Shield)
     else -> null
 }
 
@@ -297,8 +309,13 @@ fun PageOverview(
     onOpenPage: (String) -> Unit,
     onLayoutChange: (String) -> Unit,
     onReorder: (List<String>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    keepScroll: Boolean = true
 ) {
+    // Where the cards and the list were scrolled: kept while the overview is closed, so it opens where it was left
+    // ([keepScroll], Settings → Appearance; off: made new each time it opens, so at the top)
+    val keptCardsScroll = rememberScrollState()
+    val keptListScroll = rememberScrollState()
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(160)) + scaleIn(initialScale = 0.94f, animationSpec = tween(180)),
@@ -308,6 +325,8 @@ fun PageOverview(
             .zIndex(998f)
     ) {
         BackHandler(enabled = visible, onBack = onDismiss)
+        val cardsScroll = if (keepScroll) keptCardsScroll else rememberScrollState()
+        val listScroll = if (keepScroll) keptListScroll else rememberScrollState()
         // The keyboard would keep typing into the hidden page (also the terminal's own View, so not Compose's controller)
         val view = LocalView.current
         LaunchedEffect(Unit) {
@@ -341,7 +360,8 @@ fun PageOverview(
                             text = L.components.pageOverview.pages,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.semantics { heading() }
                         )
                         Text(
                             text = L.components.pageOverview.tapToOpenHoldAndDrag,
@@ -383,7 +403,7 @@ fun PageOverview(
                             modifier = modifier
                         )
                     }
-                    "LIST" -> PageTiles(pages, reorder, columns = 1, gap = 8.dp) { page, modifier ->
+                    "LIST" -> PageTiles(pages, reorder, columns = 1, gap = 8.dp, scrollState = listScroll) { page, modifier ->
                         PageRow(
                             page = page,
                             isCurrent = page.mode == currentViewMode,
@@ -396,7 +416,7 @@ fun PageOverview(
                         // 2 cards a row on a phone, more on wider screens (cards at least 150dp wide)
                         val gap = 10.dp
                         val columns = ((maxWidth - 24.dp + gap) / (150.dp + gap)).toInt().coerceAtLeast(1)
-                        PageTiles(pages, reorder, columns = columns, gap = gap) { page, modifier ->
+                        PageTiles(pages, reorder, columns = columns, gap = gap, scrollState = cardsScroll) { page, modifier ->
                             PageCard(
                                 page = page,
                                 isCurrent = page.mode == currentViewMode,
@@ -419,7 +439,8 @@ private fun LayoutSwitch(selected: String, onSelect: (String) -> Unit) {
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
-            .padding(2.dp),
+            .padding(2.dp)
+            .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         OverviewLayouts.forEach { (id, label, icon) ->
@@ -429,7 +450,8 @@ private fun LayoutSwitch(selected: String, onSelect: (String) -> Unit) {
                     .size(34.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (isSelected) ClaudeTerracotta.copy(alpha = 0.16f) else Color.Transparent)
-                    .clickable(onClickLabel = label) { if (!isSelected) onSelect(id) },
+                    // selectable: TalkBack says which layout is on (same tap and ripple as clickable)
+                    .selectable(selected = isSelected, role = Role.RadioButton) { if (!isSelected) onSelect(id) },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -522,6 +544,18 @@ private class OverviewReorder(initial: List<String>) {
         if (now != orderAtStart) onDropped(now)
     }
 
+    /** TalkBack's "Move earlier / later": the tile swaps places with its neighbour, saved like a drop. */
+    fun step(id: String, by: Int): Boolean {
+        if (draggedId != null) return false
+        val from = order.indexOf(id)
+        val to = from + by
+        if (from < 0 || to !in order.indices) return false
+        order.removeAt(from)
+        order.add(to, id)
+        onDropped(order.toList())
+        return true
+    }
+
     /** A hold that ended without moving still releases like a tap: that one doesn't open the page. */
     fun clickAllowed(): Boolean = draggedId == null && SystemClock.uptimeMillis() - endedAt > 300
 
@@ -534,6 +568,14 @@ private fun Modifier.reorderTile(id: String, reorder: OverviewReorder): Modifier
     .zIndex(if (reorder.draggedId == id) 1f else 0f)
     // before the lift below: the tile's own place, not where it is dragged to
     .onGloballyPositioned { reorder.placed(id, it) }
+    // hold-and-drag is touch only: TalkBack gets "Move earlier" / "Move later" in its actions menu
+    .semantics {
+        val i = reorder.order.indexOf(id)
+        customActions = buildList {
+            if (i > 0) add(CustomAccessibilityAction(L.components.a11y.moveEarlier) { reorder.step(id, -1) })
+            if (i >= 0 && i < reorder.order.lastIndex) add(CustomAccessibilityAction(L.components.a11y.moveLater) { reorder.step(id, 1) })
+        }
+    }
     .pointerInput(id, reorder) {
         detectDragGesturesAfterLongPress(
             onDragStart = { at -> reorder.start(id, at) },
@@ -599,9 +641,9 @@ private fun PageTiles(
     fillHeight: Boolean = false,
     tileHeight: Dp? = null,
     bottomPadding: Dp = 24.dp,
+    scrollState: ScrollState = rememberScrollState(),
     tile: @Composable (page: OverviewPage, modifier: Modifier) -> Unit
 ) {
-    val scrollState = rememberScrollState()
     SideEffect { reorder.scroll = if (fillHeight) null else scrollState }
     Box(
         modifier = Modifier
@@ -667,7 +709,12 @@ private fun PageCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable(onClickLabel = L.components.pageOverview.openLabel(page.label), onClick = onClick)
+            // TalkBack: "Current page" on the page shown now (a tap on it just closes the overview)
+            .semantics { if (isCurrent) stateDescription = L.components.a11y.currentPage }
+            .clickable(
+                onClickLabel = if (isCurrent) L.components.pageOverview.closePageOverview else L.components.pageOverview.openLabel(page.label),
+                onClick = onClick
+            )
     ) {
         Column {
             // The top of the page as it looked when it was left (or its icon before it has a picture)
@@ -784,7 +831,12 @@ private fun FitPageCard(
         else BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
         modifier = modifier
             .clip(shape)
-            .clickable(onClickLabel = L.components.pageOverview.openLabel(page.label), onClick = onClick)
+            // TalkBack: "Current page" on the page shown now (a tap on it just closes the overview)
+            .semantics { if (isCurrent) stateDescription = L.components.a11y.currentPage }
+            .clickable(
+                onClickLabel = if (isCurrent) L.components.pageOverview.closePageOverview else L.components.pageOverview.openLabel(page.label),
+                onClick = onClick
+            )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (shot != null) {
@@ -855,7 +907,12 @@ private fun PageRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable(onClickLabel = L.components.pageOverview.openLabel(page.label), onClick = onClick)
+            // TalkBack: "Current page" on the page shown now (a tap on it just closes the overview)
+            .semantics { if (isCurrent) stateDescription = L.components.a11y.currentPage }
+            .clickable(
+                onClickLabel = if (isCurrent) L.components.pageOverview.closePageOverview else L.components.pageOverview.openLabel(page.label),
+                onClick = onClick
+            )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
@@ -986,6 +1043,19 @@ private fun pageStatus(
             )
             else -> PageStatus(L.components.pageOverview.nothingRunning)
         }
+    }
+    "private" -> {
+        // read before the page was ever opened: whether a space exists comes from its file
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        remember { ai.antigem.data.privatespace.PrivateSpace.init(ctx) }
+        val status by ai.antigem.data.privatespace.PrivateSpace.status.collectAsState()
+        PageStatus(
+            when (status) {
+                ai.antigem.data.privatespace.SpaceStatus.UNLOCKED -> L.privateSpace.overview.open
+                ai.antigem.data.privatespace.SpaceStatus.LOCKED -> L.privateSpace.overview.locked
+                ai.antigem.data.privatespace.SpaceStatus.NOT_SET_UP -> L.privateSpace.overview.notSetUp
+            }
+        )
     }
     else -> PageStatus("")
 }

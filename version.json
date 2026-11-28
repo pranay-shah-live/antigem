@@ -1,13 +1,10 @@
 {
-  "version_code": 2050007,
-  "version_name": "F2.0.5-update6",
+  "version_code": 2050008,
+  "version_name": "F2.0.5-update7",
   "min_supported_version_code": 2,
   "changelog": [
-    "Native Package Installer Support: include Android system package installer in APK chooser alongside third-party installers.",
-    "Partial Text Quoting: support quoting highlighted text in Formatted select mode without overriding clipboard.",
-    "Clickable File Paths: inline code file paths in chat messages now open files directly on tap.",
-    "Crash Diagnostics & Crash Buddy: interactive crash screen with event breadcrumbs and diagnostics.",
-    "Submodule Cleanup: removed unused heavy submodules and cleaned up home screen widget overhead."
+    "Merged upstream 2.0.5-beta.10: Private Space, Settings → Troubleshoot, IDE HTML preview and full path bar, provider chips, in-app language updates, TalkBack improvements, and crash/attachment/terminal fixes.",
+    "Kept fork features: 1-shot assistant tools, quote selected text, voice Type input, floating overlay controls, clickable file paths, crash diagnostics, native package installer, and fork release versioning."
   ],
   "is_critical": false
 }

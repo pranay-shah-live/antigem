@@ -88,6 +88,9 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
+import ai.antigem.ui.components.HideFromTalkBackWhile
+import ai.antigem.ui.components.a11yMinTouchTarget
+import ai.antigem.ui.components.rememberTalkBackOn
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,6 +119,8 @@ fun IdeScreen(
     var showNewProjectDialog by remember { mutableStateOf(false) }
     var showFileManager by remember { mutableStateOf(false) }
     var saveAsDialogTab by remember { mutableStateOf<OpenTab?>(null) }
+    // the path bar's "Open folder": this folder waits for the user to confirm it as the project
+    var folderToOpen by remember { mutableStateOf<String?>(null) }
     var tabToClose by remember { mutableStateOf<OpenTab?>(null) }
     var conflictDialogTab by remember { mutableStateOf<OpenTab?>(null) }
     var autoUpdateNotification by remember { mutableStateOf<String?>(null) }
@@ -129,6 +134,8 @@ fun IdeScreen(
     var searchMatchCount by remember { mutableIntStateOf(0) }
     var currentMatchIndex by remember { mutableIntStateOf(-1) }
     val tabListState = rememberLazyListState()
+    // bigger buttons and tab bar while TalkBack is on
+    val talkBackOn = rememberTalkBackOn()
 
     var showRunMenu by remember { mutableStateOf(false) }
     var showAddProfileDialog by remember { mutableStateOf(false) }
@@ -242,6 +249,8 @@ fun IdeScreen(
 
     /** [force]: read the shown folders again even when the bridge says they did not change (the Refresh button). */
     fun refreshProjectsAndTree(force: Boolean = false) {
+        // the path bar's "~": read once per bridge, again when it reconnects
+        coroutineScope.launch { BridgeHome.load(force) }
         coroutineScope.launch {
             val projs = IdeDaemonManager.loadProjects(conversations)
             val current = IdeDaemonManager.activeProject.value
@@ -315,6 +324,10 @@ fun IdeScreen(
     val isMarkdownFile = activeTab != null && FileKinds.of(activeTab.name) == ai.antigem.data.files.FileKind.MARKDOWN
     var showMarkdownPreview by remember(activeTabPath) { mutableStateOf(false) }
     val isMarkdownPreview = isMarkdownFile && showMarkdownPreview
+    // an HTML tab opens as source too; the same eye button shows it as a web page
+    val isHtmlFile = activeTab != null && !activeTab.isDiff && activeExt in HTML_PREVIEW_EXTS
+    var showHtmlPreview by remember(activeTabPath) { mutableStateOf(false) }
+    val isHtmlPreview = isHtmlFile && showHtmlPreview
     var binaryWarningDialog by remember { mutableStateOf<BinaryWarningTab?>(null) }
     var tooLargeDialog by remember { mutableStateOf<TooLargeFile?>(null) }
 
@@ -331,6 +344,9 @@ fun IdeScreen(
             }
         }
     }
+    // TalkBack: the code editor (a native View) is out of reach while the sidebar or the full-height run panel covers
+    // it, or the IDE screen is hidden
+    HideFromTalkBackWhile(currentEditorView, !isVisible || sidebarOpen || (runnerSession != null && isRunnerMaximized))
 
     /** Opens a file through the same size and type checks as everywhere else; a new tap cancels the last open. */
     fun openInIde(path: String, name: String, size: Long, force: Boolean = false) {
@@ -360,7 +376,8 @@ fun IdeScreen(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = isVisible && (drawerState.isOpen || runnerSession == null),
+        // no swipe-to-open over the run panel or the HTML preview (the page gets its own swipes); the menu button still opens it
+        gesturesEnabled = isVisible && (drawerState.isOpen || (runnerSession == null && !isHtmlPreview)),
         drawerContent = {
             ModalDrawerSheet(
                 // the sidebar's own color, so the sheet's strip right of it and behind the status bar match it
@@ -480,8 +497,10 @@ fun IdeScreen(
                         )
                     },
                     actions = {
-                        val isTextFile = activeTab != null && (!isImageFile || (isSvgFile && showSvgSource)) && !isMarkdownPreview
+                        val isTextFile = activeTab != null && (!isImageFile || (isSvgFile && showSvgSource)) && !isMarkdownPreview && !isHtmlPreview
                         val isTextEditable = isTextFile && !activeTab.isReadOnly
+                        // a Markdown / HTML preview keeps the editor's buttons in place (greyed out), so the eye button doesn't move
+                        val showEditorButtons = isTextFile || isMarkdownPreview || isHtmlPreview
                         var showMoreOptionsMenu by remember { mutableStateOf(false) }
 
                         // Markdown Source / Rendered Preview Toggle
@@ -502,11 +521,30 @@ fun IdeScreen(
                             }
                         }
 
+                        // HTML Source / Rendered Page Toggle
+                        if (isHtmlFile) {
+                            IconButton(
+                                onClick = {
+                                    if (!showHtmlPreview) showFindBar = false
+                                    showHtmlPreview = !showHtmlPreview
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (showHtmlPreview) Icons.Default.Code else Icons.Default.Visibility,
+                                    contentDescription = if (showHtmlPreview) L.ide.screen.editHtmlSource else L.ide.screen.previewHtml,
+                                    tint = if (showHtmlPreview) ClaudeTerracotta else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
                         // Three-Dot More Options Menu (Word Wrap, Find in file, SVG toggle)
-                        if (isTextFile) {
+                        if (showEditorButtons) {
                             Box {
                                 IconButton(
                                     onClick = { showMoreOptionsMenu = true },
+                                    enabled = isTextFile,
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
@@ -604,8 +642,8 @@ fun IdeScreen(
                             }
                         }
 
-                        // Undo & Redo Buttons
-                        if (isTextFile) {
+                        // Undo & Redo Buttons (greyed out in a preview: isTextEditable is false there)
+                        if (showEditorButtons) {
                             IconButton(
                                 onClick = { currentEditorView?.undo() },
                                 enabled = canUndo && isTextEditable,
@@ -717,7 +755,7 @@ fun IdeScreen(
                                             }
                                         }
                                     },
-                                    modifier = Modifier.size(34.dp)
+                                    modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(34.dp)
                                 ) {
                                     Box(
                                         contentAlignment = Alignment.Center,
@@ -747,6 +785,9 @@ fun IdeScreen(
                                         showRunMenu = true
                                     },
                                     modifier = Modifier
+                                        .a11yMinTouchTarget(talkBackOn)
+                                        // TalkBack: "Run configurations, drop-down list" (it opens a menu)
+                                        .semantics { role = Role.DropdownList }
                                         .size(22.dp)
                                         .padding(end = 4.dp)
                                 ) {
@@ -1019,20 +1060,29 @@ fun IdeScreen(
                     .fillMaxSize()
                     .background(ai.antigem.theme.AppColors.editorBg)
             ) {
+                // Where the open file is (tap to copy its full path; "Open folder" when it is outside the project)
+                if (activeTab != null) {
+                    ActiveFilePathBar(
+                        tab = activeTab,
+                        projectPath = activeProject?.path,
+                        onOpenFolder = { folderToOpen = it }
+                    )
+                }
+
                 // Open File Tabs Bar
                 if (openTabs.isNotEmpty()) {
                     LazyRow(
                         state = tabListState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(38.dp)
+                            .height(if (talkBackOn) 48.dp else 38.dp) // 48dp tabs while TalkBack is on
                             .background(ai.antigem.theme.AppColors.editorPanel)
                     ) {
                         items(openTabs) { tab ->
                             val isSelected = tab.path == activeTabPath
                             Row(
                                 modifier = Modifier
-                                    .height(38.dp)
+                                    .height(if (talkBackOn) 48.dp else 38.dp)
                                     .background(if (isSelected) ai.antigem.theme.AppColors.editorBg else ai.antigem.theme.AppColors.editorLine)
                                     .clickable { IdeDaemonManager.setActiveTabPath(tab.path) }
                                     .padding(horizontal = 12.dp),
@@ -1049,7 +1099,7 @@ fun IdeScreen(
                                 } else if (tab.isReadOnly) {
                                     Icon(
                                         imageVector = Icons.Default.Lock,
-                                        contentDescription = "Read-Only",
+                                        contentDescription = L.ide.screen.readOnly,
                                         tint = ai.antigem.theme.AppColors.warning.copy(alpha = 0.85f),
                                         modifier = Modifier.size(12.dp)
                                     )
@@ -1062,12 +1112,11 @@ fun IdeScreen(
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = L.common.closeTab,
-                                    tint = Color.Gray,
+                                // the tap area: the icon's own 14dp, 48dp while TalkBack is on (the icon stays 14dp)
+                                Box(
+                                    contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .size(14.dp)
+                                        .a11yMinTouchTarget(talkBackOn)
                                         .clickable {
                                             if (tab.isModified) {
                                                 tabToClose = tab
@@ -1075,7 +1124,14 @@ fun IdeScreen(
                                                 IdeDaemonManager.closeTab(tab.path)
                                             }
                                         }
-                                )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = L.common.closeTab,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.width(1.dp))
                         }
@@ -1083,7 +1139,7 @@ fun IdeScreen(
                 }
 
                 // Interactive Find in File Bar
-                if (showFindBar && activeTab != null && !isImageFile && !(isSvgFile && !showSvgSource) && !isMarkdownPreview) {
+                if (showFindBar && activeTab != null && !isImageFile && !(isSvgFile && !showSvgSource) && !isMarkdownPreview && !isHtmlPreview) {
                     LaunchedEffect(Unit) {
                         currentEditorView?.editor?.clearFocus()
                         currentEditorView?.clearFocus()
@@ -1176,7 +1232,7 @@ fun IdeScreen(
                                                 searchMatchCount = 0
                                                 currentMatchIndex = -1
                                             },
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(24.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Close,
@@ -1209,7 +1265,7 @@ fun IdeScreen(
                             IconButton(
                                 onClick = { currentEditorView?.findPrevious() },
                                 enabled = searchMatchCount > 0,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowUp,
@@ -1223,7 +1279,7 @@ fun IdeScreen(
                             IconButton(
                                 onClick = { currentEditorView?.findNext() },
                                 enabled = searchMatchCount > 0,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowDown,
@@ -1240,7 +1296,7 @@ fun IdeScreen(
                                     isCaseSensitive = newCase
                                     currentEditorView?.search(findQuery, newCase)
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(32.dp)
                             ) {
                                 Text(
                                     text = L.ide.screen.aa,
@@ -1260,7 +1316,7 @@ fun IdeScreen(
                                     currentMatchIndex = -1
                                     keyboardController?.hide()
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.a11yMinTouchTarget(talkBackOn).size(32.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
@@ -1459,6 +1515,15 @@ fun IdeScreen(
                                 )
                             }
                         }
+                    } else if (isHtmlPreview) {
+                        // the tab's current text (unsaved edits included); its CSS, JS and pictures from its folder
+                        HtmlFilePreview(
+                            path = activeTab.path,
+                            html = activeTab.content,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f)
+                        )
                     } else {
                         // the editor follows the app theme's IDE colors (re-applied when the theme changes)
                         val editorThemeColors = ai.antigem.ui.ide.EditorThemeColors.fromAppTheme()
@@ -1712,6 +1777,52 @@ fun IdeScreen(
                 )
             }
 
+            // The open file's folder as the project (the path bar's "Open folder"): the open tabs stay as they are
+            folderToOpen?.let { folder ->
+                val bridgeHome by BridgeHome.home.collectAsState()
+                val folderName = File(folder).name.ifBlank { folder }
+                AlertDialog(
+                    onDismissRequest = { folderToOpen = null },
+                    icon = { Icon(Icons.Default.FolderOpen, contentDescription = null, tint = ClaudeTerracotta) },
+                    title = { Text(L.ide.screen.openNameAsTheProject(folderName), fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column {
+                            Text(
+                                text = remember(folder, bridgeHome) { shortenHome(folder, context, bridgeHome) },
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(L.ide.screen.theSidebarGitAndRunWill, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                folderToOpen = null
+                                // the project already in the list when there is one (either way Android writes the app's folder)
+                                val proj = allProjects.find { oneDataForm(it.path.trimEnd('/')) == oneDataForm(folder) }
+                                    ?: ProjectItem(folderName, folder)
+                                IdeDaemonManager.setActiveProject(proj)
+                                viewModel?.onProjectChanged(proj.path)
+                                refreshProjectsAndTree()
+                                // its files, right away
+                                coroutineScope.launch { drawerState.open() }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = ClaudeTerracotta)
+                        ) {
+                            Text(L.common.open)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { folderToOpen = null }) {
+                            Text(L.common.cancel)
+                        }
+                    }
+                )
+            }
+
             // Full-Screen File Manager & Project Selector Dialog
             if (showFileManager) {
                 val initialBrowsePath = remember(activeProject?.path) {
@@ -1917,6 +2028,8 @@ fun IdeScreen(
                             showFloatingPill = false,
                             backgroundColor = ai.antigem.theme.AppColors.terminalBg,
                             isMaximized = isRunnerMaximized,
+                            // TalkBack: out of reach while the sidebar is drawn over it
+                            coveredForA11y = sidebarOpen,
                             onToggleMaximize = {
                                 if (isRunnerMaximized) {
                                     isRunnerMaximized = false
