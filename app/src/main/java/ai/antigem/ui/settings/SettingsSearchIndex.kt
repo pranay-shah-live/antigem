@@ -19,14 +19,16 @@ data class SettingsSearchEntry(
 )
 
 object SettingsSearchIndex {
+    private val whitespaceRegex = Regex("\\s+")
+    private val cachedEntries by lazy(LazyThreadSafetyMode.NONE) { entries() }
 
     fun search(query: String): List<SettingsSearchEntry> {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return emptyList()
-        val terms = q.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val terms = q.split(whitespaceRegex).filter { it.isNotBlank() }
         if (terms.isEmpty()) return emptyList()
 
-        return entries()
+        return cachedEntries
             .mapNotNull { entry ->
                 val titleLower = entry.title.lowercase()
                 val subLower = entry.subtitle.lowercase()
