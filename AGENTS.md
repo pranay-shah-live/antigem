@@ -5,16 +5,12 @@
 - **Answer Questions First**: When the user asks a question, points out an issue, or argues a design point, ALWAYS answer and explain directly to the user in text first.
 - **Do Not Stealth-Edit Files**: Never start modifying code in silence instead of answering the user's question or addressing their direct feedback.
 - **Format Parity**: Both JSON and binary gRPC return the exact same protobuf schema and fields from the daemon; never assume or claim they return different keys or formats.
-- **Only do what user has told you to do**: Never touch a single line that user has not told to do, if user said to do Task X then do that nothing else not even add a signle extra space somewhere, if need such things to chagne mroe than user has asked for, alwasy explain user that you want to do this too.
+- **Scope-Focused Execution**: Focus strictly on the scope of the requested change; do not refactor unrelated modules or rewrite working code unless requested. If adjacent files or signatures require changes, explain them to the user first.
 
--- "Dont try git push pull commit, stash etc ever"
+- **Repo & Workspace Guardrails**: Never execute destructive or automatic repository mutations (`git reset --hard`, `git clean -f`, stash drops, rebases, or force pushes). Do not commit or push changes without explicit user approval. Always verify repo status before modifying version control state.
 
--- While running new command for build/etc always check for previous if ther is runnign smae thigns then either kill it then start new or wait for old (Dont run both);
+- **Process Deduplication**: Before starting long-running commands, verify running processes to avoid duplicates. Either wait or terminate old instances.
 
--- Always check running process before exectuing new task run(so that you dont execute same task twice or more times)
+- **No Local Gradle Builds**: Do not run `./gradlew` install or build commands locally (CI on GitHub Actions handles builds; the local environment lacks the Android SDK). Compile or syntax checks are permitted only if explicitly needed.
 
-- "Dont do gralew install or any install relelated command(Only applies to gemini models)
-
--  if need then just do compile checkS
-
-- If you are not 100% sure for someting how to do, never try to do, always ask user for direction this case without understanding what user want.
+- **Clarify Uncertainties**: Confirm before making major architectural or breaking decisions, while using standard idioms for routine implementation details.
