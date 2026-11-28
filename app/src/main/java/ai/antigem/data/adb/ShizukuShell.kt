@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuProvider
 import java.io.InputStream
 import java.io.OutputStream
 import kotlin.coroutines.resume
@@ -81,7 +82,15 @@ object ShizukuShell {
     }
 
     fun isInstalled(context: Context = appContext): Boolean =
-        runCatching { context.packageManager.getPackageInfo(PACKAGE, 0); true }.getOrDefault(false)
+        shizukuPermission(context) != null
+
+    fun getPackageName(context: Context = appContext): String? =
+        shizukuPermission(context)?.packageName
+
+    private fun shizukuPermission(context: Context) =
+        sequenceOf("com.krishna.omnishizuku.permission.API_V23", ShizukuProvider.PERMISSION)
+            .mapNotNull { permission -> runCatching { context.packageManager.getPermissionInfo(permission, 0) }.getOrNull() }
+            .firstOrNull()
 
     fun refresh(denied: Boolean? = null) {
         if (!::appContext.isInitialized) return
@@ -112,7 +121,8 @@ object ShizukuShell {
 
     /** Opens the Shizuku app, or its download page when it isn't installed. */
     fun openShizuku(context: Context) {
-        val launch = context.packageManager.getLaunchIntentForPackage(PACKAGE)
+        val targetPackage = getPackageName(context) ?: PACKAGE
+        val launch = context.packageManager.getLaunchIntentForPackage(targetPackage)
         val intent = launch ?: Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD_URL))
         runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
